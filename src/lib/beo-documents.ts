@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { Prisma } from "@prisma/client";
 import PizZip from "pizzip";
 import { formatCents } from "../core/beo/format";
 import {
@@ -14,7 +15,8 @@ import {
 import { PdfConversionError, convertToPdf } from "../core/documents/convert-pdf";
 import { countPages } from "../core/documents/count-pages";
 import { layoutBeo, type RenderedBeo } from "../core/documents/layout";
-import { planNumbers, repeatedNumbers, consecutiveBeoNumbers } from "../core/documents/numbers";
+import { planNumbers, repeatedNumbers, nextFreeNumbers } from "../core/documents/numbers";
+import { documentSnapshot } from "../core/history/compare";
 import { parseBeoNumber } from "../core/config/sequence";
 import { renderDocx } from "../core/documents/render-docx";
 import type { JsonValue } from "./audit";
@@ -26,11 +28,12 @@ import { peekNextNumber } from "./sequence-number";
 import { BEO_SEQUENCE_KEY } from "./sequence-lock";
 import { activeBeoTemplate } from "./template-store";
 import { markMemosStale } from "./event-memos";
-import { writePendingMemos } from "./memo-documents";
+import { regenerateEventMemo, writePendingMemos } from "./memo-documents";
 import {
   currentDriveMessage,
   publishGeneratedDocuments,
   type PublicDriveState,
+  type UploadOptions,
 } from "./drive-archive";
 
 export type GeneratedFile = {
@@ -41,6 +44,11 @@ export type GeneratedFile = {
   kind: string;
   driveStatus: string;
   driveUrl: string | null;
+  version: number;
+  createdAt: string;
+  beoId: string | null;
+  voided: boolean;
+  earlier: { id: string; version: number; createdAt: string }[];
 };
 
 export type GenerationResult = {
@@ -99,10 +107,24 @@ function reviewSource(
   };
 }
 
+function formatStoredDate(date: Date): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Caracas",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
+function snapshotOf(beo: ReviewBeo): Prisma.InputJsonValue {
+  return documentSnapshot({ fields: beo.fields, lines: beo.lines });
+}
+
 async function latestFiles(eventId: string): Promise<GeneratedFile[]> {
   const rows = await getPrisma().generatedDocument.findMany({
     where: { eventId },
-    orderBy: { createdAt: "desc" },
+    orderBy: { version: "desc" },
+    include: { beo: { select: { status: true } } },
   });
   const seen = new Set<string>();
   const files: GeneratedFile[] = [];
@@ -112,6 +134,18 @@ async function latestFiles(eventId: string): Promise<GeneratedFile[]> {
       continue;
     }
     seen.add(key);
+    const earlier = rows
+      .filter((item) => {
+        const itemKey = item.memoId
+          ? `memo:${item.memoId}`
+          : `${item.beoId ?? item.id}:${item.kind}`;
+        return itemKey === key && item.id !== row.id;
+      })
+      .map((item) => ({
+        id: item.id,
+        version: item.version,
+        createdAt: formatStoredDate(item.createdAt),
+      }));
     files.push({
       id: row.id,
       fileName: row.fileName,
@@ -120,6 +154,11 @@ async function latestFiles(eventId: string): Promise<GeneratedFile[]> {
       kind: row.kind,
       driveStatus: row.driveStatus,
       driveUrl: row.driveUrl,
+      version: row.version,
+      createdAt: formatStoredDate(row.createdAt),
+      beoId: row.beoId,
+      voided: row.beo?.status === "voided",
+      earlier,
     });
   }
   return files.sort((left, right) => left.number.localeCompare(right.number, "es"));
@@ -134,7 +173,13 @@ export async function listEventDocuments(eventId: string): Promise<{
   let suggested: string[] = [];
   try {
     const { last } = await peekNextNumber();
-    suggested = consecutiveBeoNumbers(last, review.beos.length);
+    const used = await getPrisma().generatedDocument.findMany({ select: { number: true } });
+    const active = review.beos.filter((beo) => beo.status !== "voided").length;
+    suggested = nextFreeNumbers(
+      last,
+      Math.max(active, 1),
+      used.map((row) => row.number),
+    );
   } catch {
     suggested = [];
   }
@@ -174,7 +219,7 @@ export async function eventDocumentZip(
   eventId: string,
 ): Promise<{ bytes: Buffer; fileName: string }> {
   const review = await getEventReview(eventId);
-  const files = await latestFiles(eventId);
+  const files = (await latestFiles(eventId)).filter((file) => !file.voided);
   if (files.length === 0) {
     throw new ReviewError("Este evento todavía no tiene documentos.", 404);
   }
@@ -225,6 +270,9 @@ export async function generateEventDocuments(
   const layouts: { beoId: string; parts: RenderedBeo[] }[] = [];
   try {
     for (const beo of review.beos) {
+      if (beo.status === "voided") {
+        continue;
+      }
       const data = toTemplateData(
         reviewSource(review.title, beo, texts.footerInitials, preparedOn, "0.000/00"),
       );
@@ -267,6 +315,13 @@ export async function generateEventDocuments(
       numbers,
       used.map((row) => row.number),
     );
+    const voided = await tx.generatedDocument.findFirst({
+      where: { number: { in: numbers }, beo: { status: "voided" } },
+      select: { number: true },
+    });
+    if (voided) {
+      throw new ReviewError(`El número ${voided.number} está anulado.`, 409);
+    }
     const duplicate = repeated[0];
     if (duplicate && !options.acknowledge) {
       throw new ReviewError(`El número ${duplicate} ya fue usado.`, 409);
@@ -326,9 +381,26 @@ export async function generateEventDocuments(
             sha256: createHash("sha256").update(docx).digest("hex"),
             exceedsPage: pages > 1,
             templateId: template.id,
+            snapshot: snapshotOf(
+              review.beos.find((beo) => beo.id === layout.beoId) ?? {
+                id: layout.beoId,
+                date: "",
+                salon: "",
+                kind: "",
+                needsReview: false,
+                pendingCount: 0,
+                status: "generated",
+                version: previous + 1,
+                fields: [],
+                lines: [],
+              },
+            ),
           },
         });
-        await prisma.beo.update({ where: { id: layout.beoId }, data: { status: "generated" } });
+        await prisma.beo.update({
+          where: { id: layout.beoId },
+          data: { status: "generated", version: previous + 1 },
+        });
         files.push({
           id: saved.id,
           fileName,
@@ -337,6 +409,11 @@ export async function generateEventDocuments(
           kind: part.kind,
           driveStatus: "pendiente",
           driveUrl: null,
+          version: previous + 1,
+          createdAt: formatStoredDate(saved.createdAt),
+          beoId: layout.beoId,
+          voided: false,
+          earlier: [],
         });
       }
     }
@@ -346,7 +423,7 @@ export async function generateEventDocuments(
     files.push(
       ...(await writePendingMemos(eventId, review.title, toPdf)).map((file) => ({
         ...file,
-        driveStatus: "pendiente",
+        driveStatus: "pendiente" as const,
         driveUrl: null,
       })),
     );
@@ -384,6 +461,167 @@ export async function generateEventDocuments(
     ...(publication.byId[file.id] ?? { driveStatus: "pendiente", driveUrl: null }),
   }));
 
+  return {
+    started: true,
+    documents: published.length,
+    files: published,
+    driveMessage: publication.message,
+  };
+}
+
+/** Regenera las B.E.O. y memorándums elegidos, conservando el número y subiendo otra versión. */
+export async function regenerateSelectedDocuments(
+  eventId: string,
+  options: GenerationOptions & {
+    beoIds?: string[];
+    memoIds?: string[];
+    archive?: UploadOptions;
+  } = {},
+): Promise<GenerationResult> {
+  const beoIds = options.beoIds ?? [];
+  const memoIds = options.memoIds ?? [];
+  if (beoIds.length === 0 && memoIds.length === 0) {
+    throw new ReviewError("Selecciona al menos un documento.", 400);
+  }
+  const review = await getEventReview(eventId);
+  const selected = review.beos.filter((beo) => beoIds.includes(beo.id));
+  if (selected.length !== beoIds.length) {
+    throw new ReviewError("No se encontró la B.E.O.", 404);
+  }
+  if (selected.some((beo) => beo.status !== "generated")) {
+    throw new ReviewError("Solo se puede regenerar una B.E.O. ya generada.", 409);
+  }
+  const pending = selected.reduce((sum, beo) => sum + beo.pendingCount, 0);
+  if (pending > 0) {
+    throw new ReviewError(`Faltan ${pending} campos.`, 409);
+  }
+
+  const texts = await getFixedTexts();
+  const preparedOn = formatPreparationDate(new Date());
+  const template = await activeBeoTemplate();
+  const templateBytes = await readFile(template.filePath);
+  const render = (data: BeoTemplateData) => renderDocx(templateBytes, data);
+  const toPdf = options.toPdf ?? convertToPdf;
+  const prisma = getPrisma();
+  const dir = path.join(process.cwd(), "data", "generated", eventId);
+  await mkdir(dir, { recursive: true });
+  const written: string[] = [];
+  const files: GeneratedFile[] = [];
+
+  try {
+    for (const beo of selected) {
+      const parts = await layoutBeo(
+        toTemplateData(
+          reviewSource(review.title, beo, texts.footerInitials, preparedOn, "0.000/00"),
+        ),
+        { render, toPdf, pages: countPages },
+      );
+      const previousRows = await prisma.generatedDocument.findMany({
+        where: { beoId: beo.id },
+        orderBy: { version: "desc" },
+      });
+      const numberByKind = new Map<string, string>();
+      for (const row of previousRows) {
+        if (!numberByKind.has(row.kind)) {
+          numberByKind.set(row.kind, row.number);
+        }
+      }
+      for (const part of parts) {
+        const number = numberByKind.get(part.kind);
+        if (!number) {
+          throw new ReviewError("No hay un número para regenerar.", 409);
+        }
+        const docx = render({ ...part.data, numero: number });
+        const pdf = await toPdf(docx);
+        const pages = await countPages(pdf);
+        const id = randomUUID();
+        const docxPath = path.join(dir, `${id}.docx`);
+        const pdfPath = path.join(dir, `${id}.pdf`);
+        await writeFile(docxPath, docx);
+        await writeFile(pdfPath, pdf);
+        written.push(docxPath, pdfPath);
+        const fileName = beoDownloadName(number, review.title, "docx");
+        const previous = previousRows.filter((row) => row.kind === part.kind).length;
+        const saved = await prisma.generatedDocument.create({
+          data: {
+            id,
+            eventId,
+            beoId: beo.id,
+            kind: part.kind,
+            version: previous + 1,
+            number,
+            fileName,
+            docxPath,
+            pdfPath,
+            sha256: createHash("sha256").update(docx).digest("hex"),
+            exceedsPage: pages > 1,
+            templateId: template.id,
+            snapshot: snapshotOf(beo),
+          },
+        });
+        await prisma.beo.update({
+          where: { id: beo.id },
+          data: { status: "generated", version: previous + 1 },
+        });
+        files.push({
+          id: saved.id,
+          fileName,
+          number,
+          exceedsPage: pages > 1,
+          kind: part.kind,
+          driveStatus: "pendiente",
+          driveUrl: null,
+          version: previous + 1,
+          createdAt: formatStoredDate(saved.createdAt),
+          beoId: beo.id,
+          voided: false,
+          earlier: [],
+        });
+      }
+    }
+    if (selected.length > 0) {
+      await markMemosStale(eventId);
+    }
+    for (const memoId of memoIds) {
+      const memo = await regenerateEventMemo(eventId, memoId, toPdf);
+      files.push({ ...memo, driveStatus: "pendiente", driveUrl: null });
+    }
+  } catch (error) {
+    await Promise.all(written.map((file) => rm(file, { force: true })));
+    if (error instanceof PdfConversionError) {
+      throw new ReviewError(error.message, 500);
+    }
+    throw error;
+  }
+
+  await recordAudit({
+    action: "event.regenerate",
+    entity: "Event",
+    entityId: eventId,
+    after: jsonValue({ documents: files.map((file) => file.number) }),
+  });
+
+  let publication: { message: string | null; byId: Record<string, PublicDriveState> } = {
+    message: null,
+    byId: {},
+  };
+  try {
+    publication = await publishGeneratedDocuments(
+      files.map((file) => file.id),
+      options.archive,
+    );
+  } catch {
+    publication = {
+      message: "No se pudo subir los documentos a Drive.",
+      byId: Object.fromEntries(
+        files.map((file) => [file.id, { driveStatus: "error", driveUrl: null }]),
+      ),
+    };
+  }
+  const published = files.map((file) => ({
+    ...file,
+    ...(publication.byId[file.id] ?? { driveStatus: "pendiente", driveUrl: null }),
+  }));
   return {
     started: true,
     documents: published.length,

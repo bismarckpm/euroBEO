@@ -82,7 +82,18 @@ type GeneratedFile = {
   exceedsPage: boolean;
   driveStatus?: string;
   driveUrl?: string | null;
+  version?: number;
+  createdAt?: string;
+  voided?: boolean;
+  earlier?: { id: string; version: number; createdAt: string }[];
 };
+
+type FieldChange = { key: string; before: string | null; after: string | null };
+
+function fieldLabel(key: string): string {
+  if (key.startsWith("linea:")) return "Línea";
+  return FIELD_LABELS[key] ?? key;
+}
 
 function driveLabel(status: string | undefined): string {
   if (status === "subido") return "Subido";
@@ -109,6 +120,12 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
   const [acknowledge, setAcknowledge] = useState(false);
   const [files, setFiles] = useState<GeneratedFile[]>([]);
   const [driveNotice, setDriveNotice] = useState<string | null>(null);
+  const [chosenBeos, setChosenBeos] = useState<string[]>([]);
+  const [chosenMemos, setChosenMemos] = useState<string[]>([]);
+  const [changes, setChanges] = useState<FieldChange[] | null>(null);
+  const [compareMessage, setCompareMessage] = useState<string | null>(null);
+  const numbered = review.beos.filter((beo) => beo.status !== "voided");
+  const beoState = review.beos.map((beo) => `${beo.id}:${beo.status}`).join();
   const selected = review.beos.find((beo) => beo.id === selectedId) ?? review.beos[0];
   const selectedMemo = review.memos.find((memo) => memo.id === selectedMemoId) ?? null;
 
@@ -137,7 +154,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
     return () => {
       cancelled = true;
     };
-  }, [review.eventId, review.pendingCount, review.beos.length]);
+  }, [review.eventId, review.pendingCount, beoState]);
 
   async function send(body: Record<string, unknown>, notice?: string) {
     setError(null);
@@ -194,6 +211,13 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
     setMessage("Datos del evento replicados.");
   }
 
+  async function compare(documentId: string) {
+    const response = await fetch(`/api/events/${review.eventId}/documents/${documentId}/compare`);
+    const data = (await response.json()) as { changes?: FieldChange[]; message?: string | null };
+    setChanges(data.changes ?? []);
+    setCompareMessage(data.message ?? null);
+  }
+
   return (
     <main className="panel review">
       <header className="review-heading">
@@ -205,9 +229,10 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
           <p data-testid="pendientes-evento">
             {review.pendingCount === 0 ? "Sin pendientes" : `Faltan ${review.pendingCount}`}
           </p>
+          {numbers[0] ? <p data-testid="siguiente-numero">Siguiente número {numbers[0]}</p> : null}
           {review.pendingCount === 0 ? (
             <div className="form-inline" data-testid="numeros-beo">
-              {review.beos.map((beo, index) => (
+              {numbered.map((beo, index) => (
                 <label key={beo.id}>
                   {`Número ${index + 1}`}
                   <input
@@ -217,7 +242,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
                       const value = event.target.value;
                       setAcknowledge(false);
                       setNumbers((current) => {
-                        const next = review.beos.map((_, itemIndex) => current[itemIndex] ?? "");
+                        const next = numbered.map((_, itemIndex) => current[itemIndex] ?? "");
                         next[index] = value;
                         return next;
                       });
@@ -235,6 +260,19 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
           >
             Confirmar y generar
           </button>
+          <button
+            type="button"
+            data-testid="regenerar-seleccion"
+            disabled={chosenBeos.length + chosenMemos.length === 0}
+            onClick={() =>
+              void send(
+                { action: "regenerate-selected", beoIds: chosenBeos, memoIds: chosenMemos },
+                "Se regeneró la selección.",
+              )
+            }
+          >
+            Regenerar seleccionados
+          </button>
         </div>
       </header>
       {error ? <p className="alert">{error}</p> : null}
@@ -248,10 +286,20 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
           {driveNotice ? <p data-testid="drive-aviso">{driveNotice}</p> : null}
           {files.map((file) => (
             <p key={file.id}>
-              <a href={`/api/events/${review.eventId}/documents/${file.id}?format=docx`}>
-                {file.fileName}
-              </a>{" "}
-              <a href={`/api/events/${review.eventId}/documents/${file.id}?format=pdf`}>PDF</a>
+              {file.voided ? (
+                <span>{file.fileName} Anulada</span>
+              ) : (
+                <>
+                  <a href={`/api/events/${review.eventId}/documents/${file.id}?format=docx`}>
+                    {file.fileName}
+                  </a>{" "}
+                  <a href={`/api/events/${review.eventId}/documents/${file.id}?format=pdf`}>PDF</a>
+                </>
+              )}{" "}
+              <span>
+                v{file.version ?? 1}
+                {file.createdAt ? ` · ${file.createdAt}` : ""}
+              </span>
               {file.exceedsPage ? " Excede una página" : ""}{" "}
               <span data-testid="estado-drive">{driveLabel(file.driveStatus)}</span>
               {file.driveStatus === "subido" && file.driveUrl ? (
@@ -267,9 +315,10 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
                   </a>
                 </>
               ) : null}
-              {file.driveStatus === "error" ||
-              file.driveStatus === "pendiente" ||
-              !file.driveStatus ? (
+              {!file.voided &&
+              (file.driveStatus === "error" ||
+                file.driveStatus === "pendiente" ||
+                !file.driveStatus) ? (
                 <>
                   {" "}
                   <button
@@ -286,8 +335,39 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
                   </button>
                 </>
               ) : null}
+              {(file.version ?? 1) > 1 ? (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    data-testid="comparar-version"
+                    onClick={() => void compare(file.id)}
+                  >
+                    Comparar
+                  </button>
+                </>
+              ) : null}
+              {file.earlier?.map((version) => (
+                <span key={version.id}>
+                  {" "}
+                  <a href={`/api/events/${review.eventId}/documents/${version.id}?format=docx`}>
+                    v{version.version}
+                  </a>
+                </span>
+              ))}
             </p>
           ))}
+          {changes ? (
+            <div data-testid="diferencias">
+              {compareMessage ? <p>{compareMessage}</p> : null}
+              {changes.length === 0 && !compareMessage ? <p>No hay campos modificados.</p> : null}
+              {changes.map((change) => (
+                <p key={change.key}>
+                  {fieldLabel(change.key)}: {change.before ?? "—"} → {change.after ?? "—"}
+                </p>
+              ))}
+            </div>
+          ) : null}
           <a href={`/api/events/${review.eventId}/documents/archive`}>Descargar todo</a>
         </section>
       ) : null}
@@ -317,40 +397,92 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
         <nav className="review-nav" aria-label="Documentos del evento">
           <h2>B.E.O.</h2>
           {review.beos.map((beo) => (
-            <button
-              key={beo.id}
-              type="button"
-              data-testid="beo-nav"
-              aria-current={beo.id === selected?.id ? "page" : undefined}
-              onClick={() => {
-                setSelectedMemoId(null);
-                setSelectedId(beo.id);
-              }}
-            >
-              <span>
-                {beo.date.slice(8)}.{beo.date.slice(5, 7)}.{beo.date.slice(0, 4)} · {beo.salon}
-              </span>
-              <small>
-                {KIND_LABEL[beo.kind] ?? beo.kind} · {beo.pendingCount}
-              </small>
-            </button>
+            <div key={beo.id}>
+              <button
+                type="button"
+                data-testid="beo-nav"
+                aria-current={beo.id === selected?.id ? "page" : undefined}
+                onClick={() => {
+                  setSelectedMemoId(null);
+                  setSelectedId(beo.id);
+                }}
+              >
+                <span>
+                  {beo.date.slice(8)}.{beo.date.slice(5, 7)}.{beo.date.slice(0, 4)} · {beo.salon}
+                </span>
+                <small>
+                  {beo.status === "voided" ? "Anulada" : (KIND_LABEL[beo.kind] ?? beo.kind)} ·{" "}
+                  {beo.pendingCount}
+                  {beo.version > 1 ? ` · v${beo.version}` : ""}
+                </small>
+              </button>
+              {beo.status === "generated" ? (
+                <label>
+                  <input
+                    type="checkbox"
+                    data-testid="elegir-regenerar"
+                    checked={chosenBeos.includes(beo.id)}
+                    onChange={() =>
+                      setChosenBeos((current) =>
+                        current.includes(beo.id)
+                          ? current.filter((id) => id !== beo.id)
+                          : [...current, beo.id],
+                      )
+                    }
+                  />
+                  Regenerar
+                </label>
+              ) : null}
+              {beo.status === "generated" ? (
+                <button
+                  type="button"
+                  data-testid="anular-beo"
+                  onClick={() =>
+                    void send({ action: "void-beo", beoId: beo.id }, "Se anuló la B.E.O.")
+                  }
+                >
+                  Anular
+                </button>
+              ) : null}
+            </div>
           ))}
           <h2>Memorándums</h2>
           {review.memos.length === 0 ? <p>Ninguno</p> : null}
           {review.memos.map((memo) => (
-            <button
-              key={memo.id}
-              type="button"
-              data-testid="memo-nav"
-              aria-current={memo.id === selectedMemo?.id ? "page" : undefined}
-              onClick={() => setSelectedMemoId(memo.id)}
-            >
-              <span>
-                {memo.name}
-                {memo.stale ? " · desactualizado" : ""}
-              </span>
-              <small>{memo.pendingCount}</small>
-            </button>
+            <div key={memo.id}>
+              <button
+                type="button"
+                data-testid="memo-nav"
+                aria-current={memo.id === selectedMemo?.id ? "page" : undefined}
+                onClick={() => setSelectedMemoId(memo.id)}
+              >
+                <span>
+                  {memo.name}
+                  {memo.stale ? " · desactualizado" : ""}
+                </span>
+                <small>
+                  {memo.pendingCount}
+                  {memo.version > 1 ? ` · v${memo.version}` : ""}
+                </small>
+              </button>
+              {memo.generated ? (
+                <label>
+                  <input
+                    type="checkbox"
+                    data-testid="elegir-memo"
+                    checked={chosenMemos.includes(memo.id)}
+                    onChange={() =>
+                      setChosenMemos((current) =>
+                        current.includes(memo.id)
+                          ? current.filter((id) => id !== memo.id)
+                          : [...current, memo.id],
+                      )
+                    }
+                  />
+                  Regenerar
+                </label>
+              ) : null}
+            </div>
           ))}
           <AddMemo
             types={review.memoTypes.filter(

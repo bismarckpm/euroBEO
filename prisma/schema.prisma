@@ -117,6 +117,9 @@ model Event {
   documents GeneratedDocument[]
 
   @@index([locator, company])
+  @@index([company])
+  @@index([title])
+  @@index([locator])
 }
 
 /// Una carga del PDF. `version` sube cuando el mismo localizador y cliente se vuelven a subir.
@@ -153,6 +156,7 @@ model BudgetDay {
   blocks   BudgetBlock[]
 
   @@index([budgetId])
+  @@index([dates], type: Gin)
 }
 
 /// Bloque de montaje, evento, desmontaje u otro dentro de un día.
@@ -238,12 +242,14 @@ model Beo {
   salon       String
   kind        String
   needsReview Boolean    @default(false)
+  version     Int        @default(1)
   createdAt   DateTime   @default(now())
   fields      BeoField[]
   lines       BeoLine[]
   documents   GeneratedDocument[]
 
   @@index([eventId])
+  @@index([date])
 }
 
 /// Memorándum del evento. El número lo escribe la asistente; la versión sube al regenerar.
@@ -359,6 +365,7 @@ model GeneratedDocument {
   driveStatus   String   @default("pendiente")
   driveUrl      String?
   driveAttempts Int      @default(0)
+  snapshot      Json?
   createdAt     DateTime @default(now())
 
   @@index([eventId])

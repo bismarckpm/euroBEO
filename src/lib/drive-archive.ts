@@ -19,19 +19,28 @@ export type DrivePublication = {
   byId: Record<string, PublicDriveState>;
 };
 
-type UploadOptions = {
+export type UploadOptions = {
   now?: Date;
   client?: DriveClient;
   wait?: (milliseconds: number) => Promise<void>;
+  rootFolderId?: string;
+  uploadPdf?: boolean;
 };
 
 type DriveConfig = {
-  env: AppEnv;
+  env: AppEnv | null;
   rootFolderId: string;
   uploadPdf: boolean;
 };
 
-function readConfig(): DriveConfig | null {
+function readConfig(options?: UploadOptions): DriveConfig | null {
+  if (options?.client && options.rootFolderId) {
+    return {
+      env: null,
+      rootFolderId: options.rootFolderId,
+      uploadPdf: options.uploadPdf ?? false,
+    };
+  }
   try {
     const env = parseEnv(process.env);
     const settings = driveSettings(env);
@@ -47,6 +56,9 @@ function readConfig(): DriveConfig | null {
 function clientFor(config: DriveConfig, options?: UploadOptions): DriveClient {
   if (options?.client) {
     return options.client;
+  }
+  if (!config.env) {
+    throw new Error(DRIVE_NOT_CONFIGURED);
   }
   const settings = driveSettings(config.env);
   if (settings.mode === "service-account") {
@@ -73,7 +85,7 @@ export async function publishGeneratedDocuments(
   const pending = Object.fromEntries(
     ids.map((id) => [id, { driveStatus: "pendiente", driveUrl: null }]),
   );
-  const config = readConfig();
+  const config = readConfig(options);
   if (!config) {
     return { configured: false, message: DRIVE_NOT_CONFIGURED, byId: pending };
   }
