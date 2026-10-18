@@ -1,0 +1,125 @@
+import { PrismaClient } from "@prisma/client";
+import { existsSync } from "node:fs";
+import { normalizeLabel } from "../src/core/config/normalize";
+import {
+  seedCatalogItems,
+  seedFixedTexts,
+  seedMemoType,
+  seedSalons,
+  seedSectionMappings,
+  seedSequence,
+} from "../src/core/config/seed-data";
+
+if (existsSync(".env")) {
+  process.loadEnvFile(".env");
+}
+
+const prisma = new PrismaClient();
+
+async function seedSalonsAndAliases(): Promise<void> {
+  for (const entry of seedSalons) {
+    const salon = await prisma.salon.upsert({
+      where: { name: entry.name },
+      create: { name: entry.name },
+      update: {},
+    });
+    for (const label of entry.aliases) {
+      const normalized = normalizeLabel(label);
+      if (!normalized || normalized === normalizeLabel(entry.name)) {
+        continue;
+      }
+      await prisma.salonAlias.upsert({
+        where: { normalized },
+        create: { salonId: salon.id, label, normalized },
+        update: { salonId: salon.id, label },
+      });
+    }
+  }
+}
+
+async function seedMappings(): Promise<void> {
+  for (const entry of seedSectionMappings) {
+    const normalized = normalizeLabel(entry.header);
+    await prisma.sectionMapping.upsert({
+      where: { normalized },
+      create: { header: entry.header, normalized, section: entry.section },
+      update: { header: entry.header, section: entry.section },
+    });
+  }
+}
+
+async function seedItems(): Promise<void> {
+  for (const entry of seedCatalogItems) {
+    const normalized = normalizeLabel(entry.description);
+    await prisma.catalogItem.upsert({
+      where: { normalized },
+      create: { ...entry, normalized },
+      update: { description: entry.description, category: entry.category, section: entry.section },
+    });
+  }
+}
+
+async function seedTexts(): Promise<void> {
+  for (const entry of seedFixedTexts) {
+    const current = await prisma.fixedText.findUnique({ where: { key: entry.key } });
+    if (!current) {
+      await prisma.fixedText.create({ data: entry });
+      continue;
+    }
+    await prisma.fixedText.update({
+      where: { key: entry.key },
+      data: {
+        label: entry.label,
+        body: current.body === "Pendiente" ? entry.body : current.body,
+      },
+    });
+  }
+}
+
+async function seedMemo(): Promise<void> {
+  const existing = await prisma.memoType.findUnique({ where: { name: seedMemoType.name } });
+  if (!existing) {
+    await prisma.memoType.create({ data: seedMemoType });
+    return;
+  }
+  if (!existing.body.includes("Valet Parking")) {
+    await prisma.memoType.update({
+      where: { id: existing.id },
+      data: {
+        recipient: seedMemoType.recipient,
+        company: seedMemoType.company,
+        reference: seedMemoType.reference,
+        body: seedMemoType.body,
+        keywords: seedMemoType.keywords,
+        templateFile: seedMemoType.templateFile,
+      },
+    });
+  }
+}
+
+async function seedBeoSequence(): Promise<void> {
+  await prisma.sequence.upsert({
+    where: { key: seedSequence.key },
+    create: seedSequence,
+    update: {},
+  });
+}
+
+async function main(): Promise<void> {
+  await seedSalonsAndAliases();
+  await seedMappings();
+  await seedItems();
+  await seedTexts();
+  await seedMemo();
+  await seedBeoSequence();
+  console.log("Configuración semilla lista.");
+}
+
+main()
+  .catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
