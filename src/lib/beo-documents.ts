@@ -27,6 +27,11 @@ import { BEO_SEQUENCE_KEY } from "./sequence-lock";
 import { activeBeoTemplate } from "./template-store";
 import { markMemosStale } from "./event-memos";
 import { writePendingMemos } from "./memo-documents";
+import {
+  currentDriveMessage,
+  publishGeneratedDocuments,
+  type PublicDriveState,
+} from "./drive-archive";
 
 export type GeneratedFile = {
   id: string;
@@ -34,12 +39,15 @@ export type GeneratedFile = {
   number: string;
   exceedsPage: boolean;
   kind: string;
+  driveStatus: string;
+  driveUrl: string | null;
 };
 
 export type GenerationResult = {
   started: true;
   documents: number;
   files: GeneratedFile[];
+  driveMessage: string | null;
 };
 
 export type GenerationOptions = {
@@ -110,6 +118,8 @@ async function latestFiles(eventId: string): Promise<GeneratedFile[]> {
       number: row.number,
       exceedsPage: row.exceedsPage,
       kind: row.kind,
+      driveStatus: row.driveStatus,
+      driveUrl: row.driveUrl,
     });
   }
   return files.sort((left, right) => left.number.localeCompare(right.number, "es"));
@@ -118,6 +128,7 @@ async function latestFiles(eventId: string): Promise<GeneratedFile[]> {
 export async function listEventDocuments(eventId: string): Promise<{
   suggested: string[];
   files: GeneratedFile[];
+  driveMessage: string | null;
 }> {
   const review = await getEventReview(eventId);
   let suggested: string[] = [];
@@ -127,7 +138,7 @@ export async function listEventDocuments(eventId: string): Promise<{
   } catch {
     suggested = [];
   }
-  return { suggested, files: await latestFiles(eventId) };
+  return { suggested, files: await latestFiles(eventId), driveMessage: currentDriveMessage() };
 }
 
 export async function readGeneratedFile(
@@ -159,7 +170,9 @@ export async function readGeneratedFile(
   };
 }
 
-export async function eventDocumentZip(eventId: string): Promise<{ bytes: Buffer; fileName: string }> {
+export async function eventDocumentZip(
+  eventId: string,
+): Promise<{ bytes: Buffer; fileName: string }> {
   const review = await getEventReview(eventId);
   const files = await latestFiles(eventId);
   if (files.length === 0) {
@@ -212,7 +225,9 @@ export async function generateEventDocuments(
   const layouts: { beoId: string; parts: RenderedBeo[] }[] = [];
   try {
     for (const beo of review.beos) {
-      const data = toTemplateData(reviewSource(review.title, beo, texts.footerInitials, preparedOn, "0.000/00"));
+      const data = toTemplateData(
+        reviewSource(review.title, beo, texts.footerInitials, preparedOn, "0.000/00"),
+      );
       const parts = await layoutBeo(data, { render, toPdf, pages: countPages });
       layouts.push({ beoId: beo.id, parts });
     }
@@ -277,7 +292,9 @@ export async function generateEventDocuments(
   try {
     for (const layout of layouts) {
       for (const [index, part] of layout.parts.entries()) {
-        const number = assigned.find((item) => item.id === layout.beoId && item.copy === index)?.number;
+        const number = assigned.find(
+          (item) => item.id === layout.beoId && item.copy === index,
+        )?.number;
         if (!number) {
           throw new ReviewError("No se pudo asignar el correlativo.", 500);
         }
@@ -318,13 +335,21 @@ export async function generateEventDocuments(
           number,
           exceedsPage: pages > 1,
           kind: part.kind,
+          driveStatus: "pendiente",
+          driveUrl: null,
         });
       }
     }
     if (previousBeoDocs > 0) {
       await markMemosStale(eventId);
     }
-    files.push(...(await writePendingMemos(eventId, review.title, toPdf)));
+    files.push(
+      ...(await writePendingMemos(eventId, review.title, toPdf)).map((file) => ({
+        ...file,
+        driveStatus: "pendiente",
+        driveUrl: null,
+      })),
+    );
   } catch (error) {
     await Promise.all(written.map((file) => rm(file, { force: true })));
     if (error instanceof PdfConversionError) {
@@ -340,5 +365,29 @@ export async function generateEventDocuments(
     after: jsonValue({ documents: files.map((file) => file.number) }),
   });
 
-  return { started: true, documents: files.length, files };
+  let publication: { message: string | null; byId: Record<string, PublicDriveState> } = {
+    message: null,
+    byId: {},
+  };
+  try {
+    publication = await publishGeneratedDocuments(files.map((file) => file.id));
+  } catch {
+    publication = {
+      message: "No se pudo subir los documentos a Drive.",
+      byId: Object.fromEntries(
+        files.map((file) => [file.id, { driveStatus: "error", driveUrl: null }]),
+      ),
+    };
+  }
+  const published = files.map((file) => ({
+    ...file,
+    ...(publication.byId[file.id] ?? { driveStatus: "pendiente", driveUrl: null }),
+  }));
+
+  return {
+    started: true,
+    documents: published.length,
+    files: published,
+    driveMessage: publication.message,
+  };
 }
