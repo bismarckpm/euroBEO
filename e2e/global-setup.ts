@@ -23,4 +23,5 @@ export default function globalSetup(): void {
     "--name=Ana Pérez",
     "--title=Asistente de Ventas",
   ]);
+  run([tsxCli, "prisma/seed-config.ts"]);
 }

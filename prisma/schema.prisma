@@ -28,3 +28,75 @@ model AuditLog {
   after     Json?
   createdAt DateTime @default(now())
 }
+
+/// Nombre oficial del salón, tal como debe imprimirse en la B.E.O.
+model Salon {
+  id        String       @id @default(cuid())
+  name      String       @unique
+  aliases   SalonAlias[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+/// Variante de un salón. `normalized` es la clave de búsqueda.
+model SalonAlias {
+  id         String   @id @default(cuid())
+  salonId    String
+  salon      Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  label      String
+  normalized String   @unique
+  createdAt  DateTime @default(now())
+
+  @@index([salonId])
+}
+
+/// Encabezado de sección del presupuesto y sección destino de la B.E.O.
+model SectionMapping {
+  id         String   @id @default(cuid())
+  header     String
+  normalized String   @unique
+  section    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+/// Ítem frecuente. Sirve cuando el encabezado de sección no alcanza para clasificarlo.
+model CatalogItem {
+  id          String   @id @default(cuid())
+  description String
+  normalized  String   @unique
+  category    String
+  section     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// Texto fijo vigente de la B.E.O. La clave es estable: instrucciones, preparación o iniciales.
+model FixedText {
+  key       String   @id
+  label     String
+  body      String
+  updatedAt DateTime @updatedAt
+}
+
+/// Tipo de memorándum: destinatario, cuerpo con variables y palabras que lo disparan.
+model MemoType {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  recipient    String
+  company      String
+  reference    String
+  body         String
+  keywords     String[]
+  templateFile String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// Último correlativo emitido. `key` identifica la serie (B.E.O.).
+model Sequence {
+  key        String   @id
+  lastNumber Int
+  year       Int
+  updatedAt  DateTime @updatedAt
+}
