@@ -1,0 +1,69 @@
+schema: spec-driven
+
+context: |
+  Producto: aplicación web interna del hotel Eurobuilding (Caracas) que recibe el PDF de un
+  presupuesto de evento y genera las órdenes de servicio (B.E.O.) y los memorándums asociados,
+  respetando al 100% el formato de las plantillas Word del hotel. Fuente funcional: docs/PRD.md.
+
+  Usuario: una sola persona (la asistente de ventas). Sin roles, permisos ni flujos de aprobación.
+  Acceso protegido con un único usuario y contraseña.
+
+  Alcance MVP:
+  - Entrada: PDF digital (con texto) del presupuesto. Misma plantilla para todos, pero cada
+    ejecutivo la llena a su estilo. PDF escaneado y Excel quedan fuera.
+  - Salida: B.E.O. y memorándum de tarifa plana de estacionamiento en Word (.docx editable) y PDF,
+    subidos a Google Drive en la carpeta del año en curso.
+  - Los montos de la B.E.O. se precargan del presupuesto; la asistente los ajusta a mano con la hoja
+    de precios impresa. La app NO gestiona hoja de precios ni reglas de desglose de A&B.
+
+  Reglas de negocio clave (detalle en docs/PRD.md, sección 6):
+  - Una B.E.O. por día × salón. Día solo de montaje o solo de desmontaje: B.E.O. propia.
+    Montaje/desmontaje el mismo día del evento: misma B.E.O.
+  - Un bloque de varios días se expande en una B.E.O. por día; la renta se divide entre los días.
+  - Salones combinados en una línea ("Turmalina - Opalo") = una sola B.E.O.
+  - Garantía = pax. Renta = monto neto con descuento; cortesía/incluida = vacío o guion.
+  - Precios siempre por unidad ("USD 36,00 c/u"). Sistemas va dentro de la B.E.O. principal.
+  - Cada B.E.O. ocupa UNA página; si no cabe, Sistemas pasa a una B.E.O. aparte.
+  - Correlativo 0.NNN/AA consecutivo al último emitido; se asigna al generar; editable.
+  - Memo de estacionamiento: se dispara por "tarifa plana de estacionamiento" en BENEFICIOS o
+    cláusulas, o se agrega a mano; un solo memo con todos los días del evento.
+  - Regenerar = nueva versión con sufijo (v2, v3…) en el Drive, sin borrar la anterior.
+
+  IA: solo para normalizar fragmentos de texto libre que las reglas no resuelven. Nunca recibe
+  montos ni el documento completo; antes de enviar se enmascaran datos del cliente (empresa,
+  contacto, teléfonos, correos, RIF, dirección). Salida con esquema JSON cerrado validado con Zod.
+  Si la IA falla o no está disponible, el campo queda "Pendiente" y la app sigue funcionando.
+
+  Stack: TypeScript estricto en todo el proyecto. Next.js (App Router) + React; backend en rutas de
+  servidor de Next.js (Node LTS) con la lógica de negocio en src/core (módulos puros, sin depender
+  de Next). PostgreSQL + Prisma. pdfjs-dist (texto con coordenadas). docxtemplater (plantillas
+  .docx). LibreOffice headless (conversión a PDF y conteo de páginas). SDK oficial de OpenAI + Zod.
+  googleapis (Drive). Vitest (unitarias/integración), Playwright (e2e). Docker Compose (app + db).
+
+  Idioma: interfaz, mensajes y artefactos en español. Identificadores de código en inglés.
+  Fechas en formato venezolano (dd/mm/aaaa en UI; dd.mm.aaaa en la fila de la B.E.O.); montos con
+  coma decimal y punto de miles (1.234,56).
+
+  Datos de prueba: los presupuestos y B.E.O. reales viven en fixtures/ (excluido de git porque
+  contienen datos de clientes).
+
+rules:
+  proposal:
+    - Redactar en español
+    - Declarar explícitamente qué queda fuera de alcance
+  specs:
+    - Redactar en español; cada requisito MUST incluir la palabra SHALL o MUST (lo exige el validador)
+    - Usar escenarios WHEN/THEN verificables, preferentemente con datos de los presupuestos de fixtures/
+  design:
+    - Explicar decisiones con alternativas consideradas
+    - Mantener la lógica de negocio en src/core, independiente de Next.js
+  tasks:
+    - Tareas de máximo 2 horas
+    - Cada grupo termina con pruebas automatizadas
+    - No implementar funcionalidades fuera del alcance del change
+
+operations:
+  apply:
+    guidance:
+      - Ejecutar las pruebas al terminar cada grupo de tareas
+      - Si una regla de negocio es ambigua, consultar docs/PRD.md antes de asumir

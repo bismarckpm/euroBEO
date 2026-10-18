@@ -1,0 +1,176 @@
+:root {
+  color-scheme: light;
+  --paper: #f3efe6;
+  --ink: #1d1a16;
+  --muted: #5e574c;
+  --line: #d9d0c1;
+  --panel: #fffdf8;
+  --gold: #8a6232;
+  --gold-dark: #6d4b24;
+  --danger: #8c2f2f;
+  --ok: #215c45;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+  line-height: 1.45;
+}
+
+a {
+  color: var(--gold-dark);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.login-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+}
+
+.card {
+  width: min(100%, 26rem);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.75rem;
+  box-shadow: 0 12px 40px rgb(40 30 16 / 8%);
+}
+
+.brand {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+h1 {
+  margin: 0.35rem 0 0.5rem;
+  font-size: 1.7rem;
+  font-weight: 650;
+}
+
+.lede {
+  margin: 0 0 1.25rem;
+  color: var(--muted);
+}
+
+form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.92rem;
+}
+
+input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.65rem 0.75rem;
+}
+
+input:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+button,
+.button-link {
+  border: 0;
+  border-radius: 8px;
+  background: var(--gold);
+  color: #fff;
+  padding: 0.65rem 0.9rem;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+button:hover,
+.button-link:hover {
+  background: var(--gold-dark);
+}
+
+.alert {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 8px;
+  background: #f8e8e6;
+  color: var(--danger);
+}
+
+.notice {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 8px;
+  background: #e5f3ec;
+  color: var(--ok);
+}
+
+.shell {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar nav {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.topbar form {
+  display: inline;
+}
+
+.topbar button {
+  background: transparent;
+  color: var(--gold-dark);
+  padding: 0;
+}
+
+.who {
+  margin: 0;
+  color: var(--muted);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
