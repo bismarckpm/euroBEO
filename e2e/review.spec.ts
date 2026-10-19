@@ -1,5 +1,7 @@
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+import { getPrisma } from "../src/lib/db";
 
 const username = "asistente";
 const password = "prueba-local-123";
@@ -69,7 +71,11 @@ test("el botón sigue deshabilitado mientras hay pendientes", async ({ page }) =
 });
 
 test("valida, confirma la cartelera, ajusta un precio y llega a cero pendientes", async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
+  const prisma = getPrisma();
+  const before = await prisma.sequence.findUnique({ where: { key: "beo" } });
+  const existing = new Set((await prisma.generatedDocument.findMany({ select: { id: true } })).map((row) => row.id));
+  try {
   await openReview(page);
   await page.getByLabel("Cartelera del evento").fill("CONGRESO NACIONAL DE REUMATOLOGÍA");
   await page.getByRole("button", { name: "Confirmar datos del evento" }).click();
@@ -89,5 +95,22 @@ test("valida, confirma la cartelera, ajusta un precio y llega a cero pendientes"
   await expect(page.getByTestId("pendientes-evento")).toHaveText("Sin pendientes");
   await expect(page.getByTestId("confirmar-generar")).toBeEnabled();
   await page.getByTestId("confirmar-generar").click();
-  await expect(page.getByTestId("generacion")).toContainText("Se inició la generación");
+  await expect(page.getByTestId("generacion")).toContainText("Se inició la generación", { timeout: 120_000 });
+  await expect(page.getByTestId("descargas")).toContainText("Descargar todo");
+  await expect(page.getByTestId("descargas")).toContainText("B.E.O.");
+  } finally {
+    const created = await prisma.generatedDocument.findMany();
+    for (const row of created) {
+      if (existing.has(row.id)) continue;
+      await rm(row.docxPath, { force: true });
+      await rm(row.pdfPath, { force: true });
+      await prisma.generatedDocument.delete({ where: { id: row.id } });
+    }
+    if (before) {
+      await prisma.sequence.update({
+        where: { key: "beo" },
+        data: { lastNumber: before.lastNumber, year: before.year },
+      });
+    }
+  }
 });

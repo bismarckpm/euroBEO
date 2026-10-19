@@ -111,6 +111,7 @@ model Event {
   updatedAt DateTime @updatedAt
   budgets   Budget[]
   beos      Beo[]
+  documents GeneratedDocument[]
 
   @@index([locator, company])
 }
@@ -236,6 +237,7 @@ model Beo {
   createdAt   DateTime   @default(now())
   fields      BeoField[]
   lines       BeoLine[]
+  documents   GeneratedDocument[]
 
   @@index([eventId])
 }
@@ -281,4 +283,40 @@ model AiCallLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+/// Versión de una plantilla Word. Los documentos ya emitidos conservan la suya.
+model Template {
+  id        String              @id @default(cuid())
+  type      String
+  version   Int
+  filePath  String
+  active    Boolean             @default(false)
+  createdAt DateTime            @default(now())
+  documents GeneratedDocument[]
+
+  @@unique([type, version])
+}
+
+/// B.E.O. generada: número, archivos y plantilla con la que se llenó.
+model GeneratedDocument {
+  id          String   @id @default(cuid())
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  beoId       String?
+  beo         Beo?     @relation(fields: [beoId], references: [id], onDelete: SetNull)
+  kind        String
+  version     Int
+  number      String
+  fileName    String
+  docxPath    String
+  pdfPath     String
+  sha256      String
+  exceedsPage Boolean  @default(false)
+  templateId  String
+  template    Template @relation(fields: [templateId], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([eventId])
+  @@index([number])
 }

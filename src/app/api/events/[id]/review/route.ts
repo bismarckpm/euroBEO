@@ -66,6 +66,8 @@ const bodySchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("generate"),
+    numbers: z.array(z.string()).optional(),
+    acknowledge: z.boolean().optional(),
   }),
 ]);
 
@@ -95,7 +97,9 @@ export async function POST(request: Request, context: RouteContext): Promise<Nex
   try {
     const body = bodySchema.parse(await request.json());
     if (body.action === "generate") {
-      return NextResponse.json(await startGeneration(id));
+      return NextResponse.json(
+        await startGeneration(id, { numbers: body.numbers, acknowledge: body.acknowledge }),
+      );
     }
     const review = await applyAction(id, body);
     return NextResponse.json(review);
@@ -129,6 +133,6 @@ async function applyAction(eventId: string, body: z.infer<typeof bodySchema>) {
     case "split":
       return splitBeo({ eventId, beoId: body.beoId, salon: body.salon, lineIds: body.lineIds });
     case "generate":
-      return startGeneration(eventId);
+      return startGeneration(eventId, { numbers: body.numbers, acknowledge: body.acknowledge });
   }
 }

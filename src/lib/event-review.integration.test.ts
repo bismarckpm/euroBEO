@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { PDFDocument } from "pdf-lib";
 import { afterAll, describe, expect, it } from "vitest";
 import { saveBudget } from "./budget-store";
 import { loadBudgetCatalog } from "./budget-catalog";
@@ -188,11 +190,57 @@ describe.skipIf(!ready)("revisión del evento", () => {
     await expect(startGeneration(eventId)).rejects.toBeInstanceOf(ReviewError);
 
     const prisma = getPrisma();
+    const before = await prisma.sequence.findUnique({ where: { key: "beo" } });
     await prisma.beoField.updateMany({ where: { beo: { eventId } }, data: { status: "RULE" } });
     await prisma.beoLine.updateMany({ where: { beo: { eventId } }, data: { status: "RULE" } });
-    const started = await startGeneration(eventId);
-    expect(started.started).toBe(true);
-    expect(started.documents).toBeGreaterThan(0);
+    const blank = await PDFDocument.create();
+    blank.addPage();
+    const pdf = Buffer.from(await blank.save());
+    try {
+      const started = await startGeneration(eventId, { toPdf: async () => pdf });
+      expect(started.started).toBe(true);
+      expect(started.documents).toBeGreaterThan(0);
+      expect(started.files[0]?.fileName).toMatch(/^B\.E\.O\. /);
+      expect(started.files.some((file) => file.fileName.endsWith(".docx"))).toBe(true);
+    } finally {
+      if (before) {
+        await prisma.sequence.update({
+          where: { key: "beo" },
+          data: { lastNumber: before.lastNumber, year: before.year },
+        });
+      }
+      await prisma.generatedDocument.deleteMany({ where: { eventId } });
+      await rm(path.join(process.cwd(), "data", "generated", eventId), { recursive: true, force: true });
+    }
+  });
+
+  it("advierte un correlativo repetido y lo permite si la asistente lo confirma", async () => {
+    const eventId = await rheumatologyEvent();
+    await getEventReview(eventId);
+    const prisma = getPrisma();
+    const before = await prisma.sequence.findUnique({ where: { key: "beo" } });
+    await prisma.beoField.updateMany({ where: { beo: { eventId } }, data: { status: "RULE" } });
+    await prisma.beoLine.updateMany({ where: { beo: { eventId } }, data: { status: "RULE" } });
+    const blank = await PDFDocument.create();
+    blank.addPage();
+    const pdf = Buffer.from(await blank.save());
+    const toPdf = async () => pdf;
+    try {
+      const first = await startGeneration(eventId, { toPdf, numbers: ["0.948/26"] });
+      expect(first.files[0]?.number).toBe("0.948/26");
+      await expect(startGeneration(eventId, { toPdf, numbers: ["0.948/26"] })).rejects.toThrow(/ya fue usado/);
+      const retried = await startGeneration(eventId, { toPdf, numbers: ["0.948/26"], acknowledge: true });
+      expect(retried.files[0]?.number).toBe("0.948/26");
+    } finally {
+      if (before) {
+        await prisma.sequence.update({
+          where: { key: "beo" },
+          data: { lastNumber: before.lastNumber, year: before.year },
+        });
+      }
+      await prisma.generatedDocument.deleteMany({ where: { eventId } });
+      await rm(path.join(process.cwd(), "data", "generated", eventId), { recursive: true, force: true });
+    }
   });
 
   it("recuerda la corrección de un salón", async () => {

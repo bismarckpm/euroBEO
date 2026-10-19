@@ -8,6 +8,7 @@ import {
   readSequence,
   resolveSalon,
 } from "@/lib/catalog-db";
+import { listTemplates } from "@/lib/template-store";
 import { listAiCallLogs, listLearnedNormalizations } from "@/lib/normalization";
 import { LearnedPanel } from "./learned";
 import {
@@ -22,6 +23,7 @@ import {
   changeSalon,
   changeSequence,
   changeTexts,
+  uploadTemplate,
   dropAlias,
   dropItem,
   dropMapping,
@@ -37,6 +39,7 @@ const TABS = [
   ["memorandums", "Memorándums"],
   ["correlativo", "Correlativo"],
   ["aprendidas", "Aprendidas"],
+  ["plantilla", "Plantilla"],
 ] as const;
 
 type Tab = (typeof TABS)[number][0];
@@ -72,7 +75,7 @@ export default async function ConfigurationPage({
 }) {
   const params = await searchParams;
   const tab = activeTab(params.tab);
-  const [salons, mappings, items, texts, memos, sequence, learned, logs] = await Promise.all([
+  const [salons, mappings, items, texts, memos, sequence, learned, logs, templates] = await Promise.all([
     listSalons(),
     listMappings(),
     listItems(),
@@ -81,6 +84,7 @@ export default async function ConfigurationPage({
     readSequence(),
     listLearnedNormalizations(),
     listAiCallLogs(),
+    listTemplates(),
   ]);
   const probe = params.prueba?.trim() ? await resolveSalon(params.prueba) : null;
 
@@ -340,6 +344,22 @@ export default async function ConfigurationPage({
             />
           </label>
           <button type="submit">Guardar correlativo</button>
+        </form>
+      ) : null}
+
+      {tab === "plantilla" ? (
+        <form action={uploadTemplate} className="stack">
+          <h2>Plantilla de la B.E.O.</h2>
+          <p className="lede">
+            Versión activa: {templates.find((template) => template.active)?.version ?? "ninguna"}. Al subir
+            un .docx se comprueba que tenga todos los marcadores. Las B.E.O. ya generadas conservan la
+            versión con la que se crearon.
+          </p>
+          <label>
+            Archivo .docx
+            <input name="template" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
+          </label>
+          <button type="submit">Subir plantilla</button>
         </form>
       ) : null}
 

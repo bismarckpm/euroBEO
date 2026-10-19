@@ -25,9 +25,12 @@
   "dependencies": {
     "@prisma/client": "6.19.3",
     "bcryptjs": "3.0.3",
+    "docxtemplater": "3.67.5",
     "next": "16.4.2",
     "openai": "7.39.0",
+    "pdf-lib": "1.17.1",
     "pdfjs-dist": "5.4.296",
+    "pizzip": "3.2.0",
     "prisma": "6.19.3",
     "react": "19.3.1",
     "react-dom": "19.3.1",

@@ -28,8 +28,10 @@ RUN apt-get update \
     fontconfig \
     ca-certificates \
   && rm -rf /var/lib/apt/lists/*
-# Cuando se conozcan las fuentes de la plantilla del hotel, colócalas en docker/fonts/.
+# La plantilla usa Arial, Georgia y Times New Roman. El alias las resuelve
+# con Liberation, que ya está instalada. Un archivo .ttf propio puede ir en docker/fonts/.
 COPY docker/fonts/ /usr/local/share/fonts/hotel/
+COPY docker/fonts/99-hotel-aliases.conf /etc/fonts/conf.d/99-hotel-aliases.conf
 RUN fc-cache -f
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/node_modules ./node_modules
@@ -38,6 +40,7 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/next.config.ts ./next.config.ts
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/public ./public
+COPY --from=builder /app/templates ./templates
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 EXPOSE 3000
