@@ -3,7 +3,12 @@ import path from "node:path";
 import PizZip from "pizzip";
 import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { missingMarkers, beoDownloadName, toTemplateData, type BeoPrintSource } from "./beo-template-data";
+import {
+  missingMarkers,
+  beoDownloadName,
+  toTemplateData,
+  type BeoPrintSource,
+} from "./beo-template-data";
 import { countPages } from "./count-pages";
 import { convertToPdf, PdfConversionError } from "./convert-pdf";
 import { layoutBeo } from "./layout";
@@ -70,6 +75,34 @@ describe("plantilla y nombre de la B.E.O.", () => {
   it("rechaza una plantilla a la que le falta un marcador", () => {
     expect(missingMarkers("<w:t>{numero}</w:t>")).toContain("{preparadoEl}");
   });
+
+  it("pinta los títulos de sección sin viñeta y mantiene c/u junto al precio", () => {
+    const xml = xmlOf(
+      renderDocx(
+        template,
+        toTemplateData(
+          source({
+            lines: [
+              { section: "BEBIDAS", groupName: "", text: "100 Refrescos USD 3,00 c/u" },
+              { section: "SISTEMAS", groupName: "", text: "01 Internet dedicado USD 300,00 c/u" },
+              { section: "MOBILIARIO", groupName: "", text: "05 Mesas USD 60,00 c/u" },
+              { section: "PERSONAL", groupName: "Montaje", text: "01 Supervisor USD 40,00 c/u" },
+            ],
+          }),
+        ),
+      ),
+    );
+    const sistemas = xml
+      .split(/<w:p[ >]/)
+      .find((paragraph) => paragraph.includes("SISTEMAS</w:t>"));
+    const group = xml.split(/<w:p[ >]/).find((paragraph) => paragraph.includes("Montaje</w:t>"));
+    expect(sistemas).toBeTruthy();
+    expect(sistemas).not.toContain("<w:numPr>");
+    expect(group).not.toContain("<w:numPr>");
+    expect(xml).toContain("300,00\u00A0c/u");
+    expect(xml).not.toContain("DESCORCHE");
+    expect(xml).not.toContain("ACCESOS");
+  });
 });
 
 describe("correlativo", () => {
@@ -83,7 +116,11 @@ describe("correlativo", () => {
       ],
       overrides: [],
     });
-    expect(planned.documents.map((item) => item.number)).toEqual(["0.948/26", "0.949/26", "0.950/26"]);
+    expect(planned.documents.map((item) => item.number)).toEqual([
+      "0.948/26",
+      "0.949/26",
+      "0.950/26",
+    ]);
     expect(consecutiveBeoNumbers({ lastNumber: 947, year: 26 }, 3)).toEqual([
       "0.948/26",
       "0.949/26",

@@ -119,7 +119,8 @@ function failure(error: unknown): NextResponse {
   if (error instanceof z.ZodError) {
     return NextResponse.json({ message: "La solicitud no es válida." }, { status: 400 });
   }
-  throw error;
+  console.error(error);
+  return NextResponse.json({ message: "No se pudieron generar los documentos." }, { status: 500 });
 }
 
 export async function GET(_request: Request, context: RouteContext): Promise<NextResponse> {

@@ -113,6 +113,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
   const [selectedMemoId, setSelectedMemoId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [shared, setShared] = useState(initial.shared);
   const [splitSalon, setSplitSalon] = useState("");
   const [splitLines, setSplitLines] = useState<string[]>([]);
@@ -158,50 +159,59 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
 
   async function send(body: Record<string, unknown>, notice?: string) {
     setError(null);
-    const response = await fetch(`/api/events/${review.eventId}/review`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = (await response.json()) as EventReview & {
-      message?: string;
-      started?: boolean;
-      files?: GeneratedFile[];
-      driveMessage?: string | null;
-    };
-    if (!response.ok) {
-      if (response.status === 409 && (data.message ?? "").includes("ya fue usado")) {
-        setAcknowledge(true);
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/events/${review.eventId}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await response.json().catch(() => null)) as
+        | (EventReview & {
+            message?: string;
+            started?: boolean;
+            files?: GeneratedFile[];
+            driveMessage?: string | null;
+          })
+        | null;
+      if (!response.ok || !data) {
+        if (response.status === 409 && (data?.message ?? "").includes("ya fue usado")) {
+          setAcknowledge(true);
+        }
+        setError(data?.message ?? "No se pudo guardar.");
+        return;
       }
-      setError(data.message ?? "No se pudo guardar.");
-      return;
-    }
-    if (data.started) {
-      setFiles(data.files ?? []);
-      setDriveNotice(data.driveMessage ?? null);
-      setAcknowledge(false);
-      setMessage(notice ?? "Se inició la generación de los documentos del evento.");
-      const refreshed = await fetch(`/api/events/${review.eventId}/review`);
-      if (refreshed.ok) {
-        const next = (await refreshed.json()) as EventReview;
-        setReview(next);
-        setShared(next.shared);
+      if (data.started) {
+        setFiles(data.files ?? []);
+        setDriveNotice(data.driveMessage ?? null);
+        setAcknowledge(false);
+        setMessage(notice ?? "Se inició la generación de los documentos del evento.");
+        const refreshed = await fetch(`/api/events/${review.eventId}/review`);
+        if (refreshed.ok) {
+          const next = (await refreshed.json()) as EventReview;
+          setReview(next);
+          setShared(next.shared);
+        }
+        return;
       }
-      return;
+      if (data.files) {
+        setFiles(data.files);
+        setDriveNotice(data.driveMessage ?? null);
+      }
+      setReview(data);
+      setShared(data.shared);
+      if (!data.beos.some((beo) => beo.id === selectedId)) {
+        setSelectedId(data.beos[0]?.id ?? "");
+      }
+      if (selectedMemoId && !data.memos.some((memo) => memo.id === selectedMemoId)) {
+        setSelectedMemoId(null);
+      }
+      setMessage(notice ?? null);
+    } catch {
+      setError("No se pudo conectar con el servidor.");
+    } finally {
+      setBusy(false);
     }
-    if (data.files) {
-      setFiles(data.files);
-      setDriveNotice(data.driveMessage ?? null);
-    }
-    setReview(data);
-    setShared(data.shared);
-    if (!data.beos.some((beo) => beo.id === selectedId)) {
-      setSelectedId(data.beos[0]?.id ?? "");
-    }
-    if (selectedMemoId && !data.memos.some((memo) => memo.id === selectedMemoId)) {
-      setSelectedMemoId(null);
-    }
-    setMessage(notice ?? null);
   }
 
   async function confirmShared() {
@@ -225,7 +235,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
           <h1>Revisión</h1>
           <p className="lede">{review.title}</p>
         </div>
-        <div>
+        <div className="review-actions">
           <p data-testid="pendientes-evento">
             {review.pendingCount === 0 ? "Sin pendientes" : `Faltan ${review.pendingCount}`}
           </p>
@@ -255,10 +265,10 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
           <button
             type="button"
             data-testid="confirmar-generar"
-            disabled={review.pendingCount > 0}
+            disabled={busy || review.pendingCount > 0}
             onClick={() => void send({ action: "generate", numbers, acknowledge })}
           >
-            Confirmar y generar
+            {busy ? "Generando…" : "Confirmar y generar"}
           </button>
           <button
             type="button"
@@ -282,7 +292,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
         </p>
       ) : null}
       {files.length > 0 ? (
-        <section data-testid="descargas">
+        <section className="downloads" data-testid="descargas">
           {driveNotice ? <p data-testid="drive-aviso">{driveNotice}</p> : null}
           {files.map((file) => (
             <p key={file.id}>
@@ -931,38 +941,51 @@ function LineBox({
       className={`review-line ${tone(line.status)}`}
       data-testid={open ? "linea-abierta" : "linea"}
     >
+      <div className="line-toolbar">
+        <label className="check-line">
+          <input
+            type="checkbox"
+            checked={checked}
+            aria-label={`Separar ${line.description}`}
+            onChange={() => onToggle(line.id)}
+          />
+          Separar
+        </label>
+        {badge(line.status) ? <em className="badge">{badge(line.status)}</em> : null}
+        <button type="button" className="quiet" onClick={() => onDelete(line.id)}>
+          Quitar
+        </button>
+      </div>
+      <div className="line-fields">
+        <label>
+          Cantidad
+          <input
+            aria-label="Cantidad"
+            defaultValue={String(line.qty)}
+            key={`${line.id}-qty-${line.qty}`}
+            onBlur={(event) => onSave(line, Number(event.target.value), line.description, price)}
+          />
+        </label>
+        <label>
+          Precio
+          <input
+            aria-label="Precio unitario"
+            defaultValue={price}
+            key={`${line.id}-price-${price}`}
+            onBlur={(event) => onSave(line, line.qty, line.description, event.target.value)}
+          />
+        </label>
+      </div>
       <label>
-        Separar
+        Descripción
         <input
-          type="checkbox"
-          checked={checked}
-          aria-label={`Separar ${line.description}`}
-          onChange={() => onToggle(line.id)}
+          aria-label="Descripción"
+          defaultValue={line.description}
+          key={`${line.id}-desc-${line.description}`}
+          onBlur={(event) => onSave(line, line.qty, event.target.value, price)}
         />
       </label>
-      <input
-        aria-label="Cantidad"
-        defaultValue={String(line.qty)}
-        key={`${line.id}-qty-${line.qty}`}
-        onBlur={(event) => onSave(line, Number(event.target.value), line.description, price)}
-      />
-      <input
-        aria-label="Descripción"
-        defaultValue={line.description}
-        key={`${line.id}-desc-${line.description}`}
-        onBlur={(event) => onSave(line, line.qty, event.target.value, price)}
-      />
-      <input
-        aria-label="Precio unitario"
-        defaultValue={price}
-        key={`${line.id}-price-${price}`}
-        onBlur={(event) => onSave(line, line.qty, line.description, event.target.value)}
-      />
-      <p>{line.text}</p>
-      {badge(line.status) ? <em className="badge">{badge(line.status)}</em> : null}
-      <button type="button" className="quiet" onClick={() => onDelete(line.id)}>
-        Quitar
-      </button>
+      {line.text ? <p className="line-source">{line.text}</p> : null}
     </div>
   );
 }
@@ -987,7 +1010,7 @@ function AddLine({
   const [price, setPrice] = useState("");
   return (
     <form
-      className="form-inline"
+      className="add-line"
       onSubmit={(event) => {
         event.preventDefault();
         onAdd(section, groupName, Number(qty), description, price);

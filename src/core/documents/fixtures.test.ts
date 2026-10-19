@@ -6,7 +6,12 @@ import { extractPdfFragments } from "../../lib/pdf-text";
 import { parseBudget, type BudgetCatalog } from "../budget/parse-budget";
 import { currentFixedTexts } from "../config/fixed-texts";
 import { normalizeLabel } from "../config/normalize";
-import { seedCatalogItems, seedFixedTexts, seedSalons, seedSectionMappings } from "../config/seed-data";
+import {
+  seedCatalogItems,
+  seedFixedTexts,
+  seedSalons,
+  seedSectionMappings,
+} from "../config/seed-data";
 import type { BeoDraft } from "../beo/model";
 import { proposeBeos } from "../beo/propose";
 import { draftToTemplateData } from "./beo-template-data";
@@ -47,9 +52,12 @@ async function proposeFile(part: string) {
     throw new Error(`No está el presupuesto ${part}.`);
   }
   return proposeBeos(
-    await parseBudget(await extractPdfFragments(new Uint8Array(readFileSync(path.join(budgets, name)))), {
-      catalog: catalog(),
-    }),
+    await parseBudget(
+      await extractPdfFragments(new Uint8Array(readFileSync(path.join(budgets, name)))),
+      {
+        catalog: catalog(),
+      },
+    ),
     texts,
   );
 }
@@ -58,7 +66,8 @@ function weight(draft: BeoDraft): number {
   return (
     draft.food.length +
     draft.sections.reduce(
-      (sum, section) => sum + section.groups.reduce((inner, group) => inner + group.lines.length, 0),
+      (sum, section) =>
+        sum + section.groups.reduce((inner, group) => inner + group.lines.length, 0),
       0,
     )
   );
@@ -79,7 +88,9 @@ describe.skipIf(!available)("B.E.O. de los presupuestos reales", () => {
     if (!issuedName) {
       throw new Error("No está la B.E.O. 0.830.");
     }
-    const issued = (await extractPdfFragments(new Uint8Array(readFileSync(path.join(beos, issuedName)))))
+    const issued = (
+      await extractPdfFragments(new Uint8Array(readFileSync(path.join(beos, issuedName))))
+    )
       .map((fragment) => fragment.text)
       .join("\n");
     const docx = renderDocx(
@@ -128,7 +139,7 @@ describe.skipIf(!available)("B.E.O. de los presupuestos reales", () => {
     expect(text).toContain(busiest.formattedDate.value);
     const sample = busiest.food[0]?.text ?? busiest.sections[0]?.groups[0]?.lines[0]?.text;
     if (sample) {
-      expect(text).toContain(sample);
+      expect(text.replaceAll("\u00A0", " ")).toContain(sample);
     }
     if (data.sistemas.length > 0) {
       let pdf: Buffer;
@@ -149,7 +160,21 @@ describe.skipIf(!available)("B.E.O. de los presupuestos reales", () => {
           iniciales: "JG/AR",
         });
         main.sistemas = [];
-        const systems = { ...data, tituloDerecha: "SISTEMAS", alimentos: [], bebidas: [], descorche: [], accesos: [], mobiliario: [], electricidad: [], pendiente: [], personalMontaje: [], personalEvento: [], personalDesmontaje: [], montaje: "" };
+        const systems = {
+          ...data,
+          tituloDerecha: "SISTEMAS",
+          alimentos: [],
+          bebidas: [],
+          descorche: [],
+          accesos: [],
+          mobiliario: [],
+          electricidad: [],
+          pendiente: [],
+          personalMontaje: [],
+          personalEvento: [],
+          personalDesmontaje: [],
+          montaje: "",
+        };
         expect(await countPages(await convertToPdf(renderDocx(template, main)))).toBe(1);
         expect(await countPages(await convertToPdf(renderDocx(template, systems)))).toBe(1);
       }

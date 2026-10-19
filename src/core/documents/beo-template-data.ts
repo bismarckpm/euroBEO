@@ -155,12 +155,20 @@ export function formatPreparationDate(date: Date): string {
     month: "2-digit",
     year: "numeric",
   }).formatToParts(date);
-  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
   return `${value("day")}/${value("month")}/${value("year")}`;
 }
 
+/** Mantiene el precio y «c/u» en la misma línea dentro de la celda angosta. */
+function glueUnit(text: string): string {
+  return text.replace(/(\d)\s+(c\/u)\b/gi, "$1\u00A0$2");
+}
+
 function linesOf(lines: PrintLine[], section: string): TemplateLine[] {
-  return lines.filter((line) => line.section === section).map((line) => ({ texto: line.text }));
+  return lines
+    .filter((line) => line.section === section)
+    .map((line) => ({ texto: glueUnit(line.text) }));
 }
 
 function personnelBucket(groupName: string): "montaje" | "evento" | "desmontaje" {
@@ -177,10 +185,13 @@ function personnelBucket(groupName: string): "montaje" | "evento" | "desmontaje"
   return "evento";
 }
 
-function personnel(lines: PrintLine[], bucket: "montaje" | "evento" | "desmontaje"): TemplateLine[] {
+function personnel(
+  lines: PrintLine[],
+  bucket: "montaje" | "evento" | "desmontaje",
+): TemplateLine[] {
   return lines
     .filter((line) => line.section === "PERSONAL" && personnelBucket(line.groupName) === bucket)
-    .map((line) => ({ texto: line.text }));
+    .map((line) => ({ texto: glueUnit(line.text) }));
 }
 
 export function rightColumnTitle(input: { bebidas: TemplateLine[] }): string {
@@ -237,7 +248,11 @@ export function draftToTemplateData(
       .filter((section) => section.section !== "ALIMENTOS")
       .flatMap((section) =>
         section.groups.flatMap((group) =>
-          group.lines.map((line) => ({ section: section.section, groupName: group.name, text: line.text })),
+          group.lines.map((line) => ({
+            section: section.section,
+            groupName: group.name,
+            text: line.text,
+          })),
         ),
       ),
   ];
@@ -266,7 +281,8 @@ export function draftToTemplateData(
 }
 
 export function templateContext(data: BeoTemplateData): Record<string, unknown> {
-  const personalCount = data.personalMontaje.length + data.personalEvento.length + data.personalDesmontaje.length;
+  const personalCount =
+    data.personalMontaje.length + data.personalEvento.length + data.personalDesmontaje.length;
   return {
     ...data,
     tieneAlimentos: data.alimentos.length > 0,
@@ -297,7 +313,11 @@ function safeFilePart(value: string): string {
 }
 
 /** `B.E.O. 0.948 CONGRESO NACIONAL DE REUMATOLOGIA.docx` */
-export function beoDownloadName(number: string, eventName: string, extension: "docx" | "pdf"): string {
+export function beoDownloadName(
+  number: string,
+  eventName: string,
+  extension: "docx" | "pdf",
+): string {
   const parsed = parseBeoNumber(number);
   const short = parsed ? `0.${String(parsed.lastNumber).padStart(3, "0")}` : safeFilePart(number);
   const title = safeFilePart(eventName).toUpperCase();
