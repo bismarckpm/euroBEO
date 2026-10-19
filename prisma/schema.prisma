@@ -100,3 +100,109 @@ model Sequence {
   year       Int
   updatedAt  DateTime @updatedAt
 }
+
+/// Evento leído de un presupuesto. Varias versiones comparten el mismo evento.
+model Event {
+  id        String   @id @default(cuid())
+  title     String
+  company   String
+  locator   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  budgets   Budget[]
+
+  @@index([locator, company])
+}
+
+/// Una carga del PDF. `version` sube cuando el mismo localizador y cliente se vuelven a subir.
+model Budget {
+  id              String          @id @default(cuid())
+  eventId         String
+  event           Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  version         Int
+  fileName        String
+  originalPdf     Bytes
+  status          String
+  justification   String?
+  subtotalCents   Int?
+  itemsSumCents   Int
+  differenceCents Int?
+  warnings        String[]
+  structureErrors Json
+  createdAt       DateTime        @default(now())
+  days            BudgetDay[]
+  benefits        BudgetBenefit[]
+
+  @@unique([eventId, version])
+}
+
+/// Día o rango de fechas del presupuesto.
+model BudgetDay {
+  id       String        @id @default(cuid())
+  budgetId String
+  budget   Budget        @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  position Int
+  dates    String[]
+  raw      String
+  blocks   BudgetBlock[]
+
+  @@index([budgetId])
+}
+
+/// Bloque de montaje, evento, desmontaje u otro dentro de un día.
+model BudgetBlock {
+  id              String       @id @default(cuid())
+  dayId           String
+  day             BudgetDay    @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  position        Int
+  kind            String
+  rawTitle        String
+  salonRaw        String?
+  salonName       String?
+  salonStatus     String
+  schedule        String?
+  scheduleStatus  String
+  setup           String?
+  setupStatus     String
+  pax             Int?
+  paxStatus       String
+  nights          Int?
+  rentRegular     Int?
+  rentNet         Int?
+  discountLabel   String?
+  courtesy        Boolean
+  page            Int
+  items           BudgetItem[]
+
+  @@index([dayId])
+}
+
+/// Ítem leído en una sección del bloque.
+model BudgetItem {
+  id              String      @id @default(cuid())
+  blockId         String
+  block           BudgetBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  position        Int
+  sectionHeader   String
+  sectionTarget   String?
+  sectionStatus   String
+  qty             Int
+  description     String
+  nights          Int
+  unitPriceCents  Int?
+  totalCents      Int?
+  flags           String[]
+
+  @@index([blockId])
+}
+
+/// Línea de la sección BENEFICIOS.
+model BudgetBenefit {
+  id       String @id @default(cuid())
+  budgetId String
+  budget   Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  position Int
+  text     String
+
+  @@index([budgetId])
+}

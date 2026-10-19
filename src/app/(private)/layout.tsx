@@ -14,6 +14,7 @@ export default async function PrivateLayout({ children }: { children: ReactNode 
         </div>
         <nav>
           <Link href="/">Inicio</Link>
+          <Link href="/presupuestos">Presupuesto</Link>
           <Link href="/configuracion">Configuración</Link>
           <Link href="/perfil">Perfil</Link>
           <form action="/api/auth/logout" method="post">
