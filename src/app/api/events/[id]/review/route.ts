@@ -12,6 +12,7 @@ import {
   splitBeo,
   startGeneration,
   addMemoToEvent,
+  retryDriveUpload,
   updateBeoField,
   updateBeoLine,
   updateSharedField,
@@ -92,6 +93,10 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("regenerate-memo"),
     memoId: z.string().min(1),
   }),
+  z.object({
+    action: z.literal("retry-drive"),
+    documentId: z.string().min(1),
+  }),
 ]);
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -165,5 +170,7 @@ async function applyAction(eventId: string, body: z.infer<typeof bodySchema>) {
       return confirmMemoField(eventId, body.memoId, body.key);
     case "regenerate-memo":
       return regenerateMemo(eventId, body.memoId);
+    case "retry-drive":
+      return retryDriveUpload(eventId, body.documentId);
   }
 }

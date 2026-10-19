@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { EventReview, ReviewBeo, ReviewField, ReviewLine, ReviewMemo } from "@/lib/event-review";
+import type {
+  EventReview,
+  ReviewBeo,
+  ReviewField,
+  ReviewLine,
+  ReviewMemo,
+} from "@/lib/event-review";
 import { formatAmount } from "@/lib/format";
 
 const FIELD_LABELS: Record<string, string> = {
@@ -32,9 +38,29 @@ const FIELD_LABELS: Record<string, string> = {
 
 const HEADER_KEYS = ["weekday", "formattedDate", "schedule", "eventType", "salonName"];
 const SUMMARY_KEYS = ["guarantee", "rentCents", "billboard", "setup"];
-const NOTE_KEYS = ["specialInstructions", "servicePreparation", "company", "contact", "phone", "address"];
-const RIGHT_SECTIONS = ["BEBIDAS", "ACCESOS", "DESCORCHE", "SISTEMAS", "MOBILIARIO", "ELECTRICIDAD", "PERSONAL", "PENDIENTE"];
-const KIND_LABEL: Record<string, string> = { MONTAJE: "Montaje", EVENTO: "Evento", DESMONTAJE: "Desmontaje" };
+const NOTE_KEYS = [
+  "specialInstructions",
+  "servicePreparation",
+  "company",
+  "contact",
+  "phone",
+  "address",
+];
+const RIGHT_SECTIONS = [
+  "BEBIDAS",
+  "ACCESOS",
+  "DESCORCHE",
+  "SISTEMAS",
+  "MOBILIARIO",
+  "ELECTRICIDAD",
+  "PERSONAL",
+  "PENDIENTE",
+];
+const KIND_LABEL: Record<string, string> = {
+  MONTAJE: "Montaje",
+  EVENTO: "Evento",
+  DESMONTAJE: "Desmontaje",
+};
 
 function shownValue(key: string, value: string | null): string {
   if (value === null) return "";
@@ -54,7 +80,15 @@ type GeneratedFile = {
   fileName: string;
   number: string;
   exceedsPage: boolean;
+  driveStatus?: string;
+  driveUrl?: string | null;
 };
+
+function driveLabel(status: string | undefined): string {
+  if (status === "subido") return "Subido";
+  if (status === "error") return "Error al subir";
+  return "Pendiente de subir";
+}
 
 function tone(status: string): string {
   if (status === "AI") return "field-ai";
@@ -74,6 +108,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
   const [numbers, setNumbers] = useState<string[]>([]);
   const [acknowledge, setAcknowledge] = useState(false);
   const [files, setFiles] = useState<GeneratedFile[]>([]);
+  const [driveNotice, setDriveNotice] = useState<string | null>(null);
   const selected = review.beos.find((beo) => beo.id === selectedId) ?? review.beos[0];
   const selectedMemo = review.memos.find((memo) => memo.id === selectedMemoId) ?? null;
 
@@ -85,12 +120,19 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
     void fetch(`/api/events/${review.eventId}/documents`)
       .then(async (response) => {
         if (!response.ok) return null;
-        return (await response.json()) as { suggested: string[]; files: GeneratedFile[] };
+        return (await response.json()) as {
+          suggested: string[];
+          files: GeneratedFile[];
+          driveMessage?: string | null;
+        };
       })
       .then((data) => {
         if (!data || cancelled) return;
         setFiles(data.files);
-        setNumbers((current) => (current.length === data.suggested.length ? current : data.suggested));
+        setDriveNotice(data.files.length > 0 ? (data.driveMessage ?? null) : null);
+        setNumbers((current) =>
+          current.length === data.suggested.length ? current : data.suggested,
+        );
       });
     return () => {
       cancelled = true;
@@ -108,6 +150,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
       message?: string;
       started?: boolean;
       files?: GeneratedFile[];
+      driveMessage?: string | null;
     };
     if (!response.ok) {
       if (response.status === 409 && (data.message ?? "").includes("ya fue usado")) {
@@ -118,6 +161,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
     }
     if (data.started) {
       setFiles(data.files ?? []);
+      setDriveNotice(data.driveMessage ?? null);
       setAcknowledge(false);
       setMessage(notice ?? "Se inició la generación de los documentos del evento.");
       const refreshed = await fetch(`/api/events/${review.eventId}/review`);
@@ -130,6 +174,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
     }
     if (data.files) {
       setFiles(data.files);
+      setDriveNotice(data.driveMessage ?? null);
     }
     setReview(data);
     setShared(data.shared);
@@ -193,14 +238,54 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
         </div>
       </header>
       {error ? <p className="alert">{error}</p> : null}
-      {message ? <p className="notice" data-testid="generacion">{message}</p> : null}
+      {message ? (
+        <p className="notice" data-testid="generacion">
+          {message}
+        </p>
+      ) : null}
       {files.length > 0 ? (
         <section data-testid="descargas">
+          {driveNotice ? <p data-testid="drive-aviso">{driveNotice}</p> : null}
           {files.map((file) => (
             <p key={file.id}>
-              <a href={`/api/events/${review.eventId}/documents/${file.id}?format=docx`}>{file.fileName}</a>{" "}
+              <a href={`/api/events/${review.eventId}/documents/${file.id}?format=docx`}>
+                {file.fileName}
+              </a>{" "}
               <a href={`/api/events/${review.eventId}/documents/${file.id}?format=pdf`}>PDF</a>
-              {file.exceedsPage ? " Excede una página" : ""}
+              {file.exceedsPage ? " Excede una página" : ""}{" "}
+              <span data-testid="estado-drive">{driveLabel(file.driveStatus)}</span>
+              {file.driveStatus === "subido" && file.driveUrl ? (
+                <>
+                  {" "}
+                  <a
+                    href={file.driveUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="enlace-drive"
+                  >
+                    Abrir en Drive
+                  </a>
+                </>
+              ) : null}
+              {file.driveStatus === "error" ||
+              file.driveStatus === "pendiente" ||
+              !file.driveStatus ? (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    data-testid="reintentar-drive"
+                    onClick={() =>
+                      void send(
+                        { action: "retry-drive", documentId: file.id },
+                        "Se reintentó la subida a Drive.",
+                      )
+                    }
+                  >
+                    Reintentar
+                  </button>
+                </>
+              ) : null}
             </p>
           ))}
           <a href={`/api/events/${review.eventId}/documents/archive`}>Descargar todo</a>
@@ -216,7 +301,9 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
               <input
                 aria-label={`${FIELD_LABELS[key]} del evento`}
                 value={shared[key] ?? ""}
-                onChange={(event) => setShared((current) => ({ ...current, [key]: event.target.value }))}
+                onChange={(event) =>
+                  setShared((current) => ({ ...current, [key]: event.target.value }))
+                }
               />
             </label>
           ))}
@@ -266,30 +353,45 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
             </button>
           ))}
           <AddMemo
-            types={review.memoTypes.filter((type) => !review.memos.some((memo) => memo.memoTypeId === type.id))}
-            onAdd={(memoTypeId) => void send({ action: "add-memo", memoTypeId }, "Memorándum agregado.")}
+            types={review.memoTypes.filter(
+              (type) => !review.memos.some((memo) => memo.memoTypeId === type.id),
+            )}
+            onAdd={(memoTypeId) =>
+              void send({ action: "add-memo", memoTypeId }, "Memorándum agregado.")
+            }
           />
         </nav>
 
         {selectedMemo ? (
           <MemoView
             memo={selectedMemo}
-            onField={(key, value) => void send({ action: "update-memo-field", memoId: selectedMemo.id, key, value })}
-            onValidate={(key) => void send({ action: "validate-memo-field", memoId: selectedMemo.id, key })}
+            onField={(key, value) =>
+              void send({ action: "update-memo-field", memoId: selectedMemo.id, key, value })
+            }
+            onValidate={(key) =>
+              void send({ action: "validate-memo-field", memoId: selectedMemo.id, key })
+            }
             onRegenerate={() =>
-              void send({ action: "regenerate-memo", memoId: selectedMemo.id }, "Se regeneró el memorándum.")
+              void send(
+                { action: "regenerate-memo", memoId: selectedMemo.id },
+                "Se regeneró el memorándum.",
+              )
             }
           />
         ) : selected ? (
           <BeoView
             beo={selected}
-            others={review.beos.filter((beo) => beo.id !== selected.id && beo.date === selected.date)}
+            others={review.beos.filter(
+              (beo) => beo.id !== selected.id && beo.date === selected.date,
+            )}
             splitSalon={splitSalon}
             splitLines={splitLines}
             onSplitSalon={setSplitSalon}
             onToggleLine={(lineId) =>
               setSplitLines((current) =>
-                current.includes(lineId) ? current.filter((id) => id !== lineId) : [...current, lineId],
+                current.includes(lineId)
+                  ? current.filter((id) => id !== lineId)
+                  : [...current, lineId],
               )
             }
             onField={(key, value, remember) =>
@@ -308,11 +410,24 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
             }
             onDelete={(lineId) => void send({ action: "delete-line", lineId })}
             onAdd={(section, groupName, qty, description, unitPrice) =>
-              void send({ action: "add-line", beoId: selected.id, section, groupName, qty, description, unitPrice })
+              void send({
+                action: "add-line",
+                beoId: selected.id,
+                section,
+                groupName,
+                qty,
+                description,
+                unitPrice,
+              })
             }
             onMerge={(sourceId) => void send({ action: "merge", targetId: selected.id, sourceId })}
             onSplit={() =>
-              void send({ action: "split", beoId: selected.id, salon: splitSalon, lineIds: splitLines })
+              void send({
+                action: "split",
+                beoId: selected.id,
+                salon: splitSalon,
+                lineIds: splitLines,
+              })
             }
           />
         ) : (
@@ -338,7 +453,11 @@ function AddMemo({
     <div className="form-inline">
       <label>
         Tipo
-        <select aria-label="Tipo de memorándum" value={memoTypeId} onChange={(event) => setMemoTypeId(event.target.value)}>
+        <select
+          aria-label="Tipo de memorándum"
+          value={memoTypeId}
+          onChange={(event) => setMemoTypeId(event.target.value)}
+        >
           {types.map((type) => (
             <option key={type.id} value={type.id}>
               {type.name}
@@ -381,7 +500,11 @@ function MemoView({
         const mark = badge(field.status);
         const label = FIELD_LABELS[field.key] ?? field.key;
         return (
-          <label key={field.id} className={`review-field ${tone(field.status)}`} data-testid={open ? "campo-abierto" : "campo"}>
+          <label
+            key={field.id}
+            className={`review-field ${tone(field.status)}`}
+            data-testid={open ? "campo-abierto" : "campo"}
+          >
             <span>
               {label}
               {mark ? <em className="badge">{mark}</em> : null}
@@ -402,7 +525,11 @@ function MemoView({
               />
             )}
             {field.status === "AI" || field.status === "REVIEW" ? (
-              <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => onValidate(field.key)}>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => onValidate(field.key)}
+              >
                 Validar
               </button>
             ) : null}
@@ -438,7 +565,13 @@ function BeoView({
   onValidate: (key: string) => void;
   onLine: (line: ReviewLine, qty: number, description: string, unitPrice: string) => void;
   onDelete: (lineId: string) => void;
-  onAdd: (section: string, groupName: string, qty: number, description: string, unitPrice: string) => void;
+  onAdd: (
+    section: string,
+    groupName: string,
+    qty: number,
+    description: string,
+    unitPrice: string,
+  ) => void;
   onMerge: (sourceId: string) => void;
   onSplit: () => void;
 }) {
@@ -464,7 +597,14 @@ function BeoView({
         <section>
           <h3>Alimentos y bebidas</h3>
           {food.map((line) => (
-            <LineBox key={line.id} line={line} checked={splitLines.includes(line.id)} onToggle={onToggleLine} onSave={onLine} onDelete={onDelete} />
+            <LineBox
+              key={line.id}
+              line={line}
+              checked={splitLines.includes(line.id)}
+              onToggle={onToggleLine}
+              onSave={onLine}
+              onDelete={onDelete}
+            />
           ))}
           <AddLine section="ALIMENTOS" groupName="" onAdd={onAdd} />
         </section>
@@ -474,11 +614,36 @@ function BeoView({
             if (lines.length === 0 && section === "PENDIENTE") return null;
             return (
               <div key={section}>
-                <h3>{section === "PERSONAL" ? "Personal" : section.charAt(0) + section.slice(1).toLowerCase()}</h3>
-                {section === "PERSONAL" ? <Personnel lines={lines} splitLines={splitLines} onToggle={onToggleLine} onSave={onLine} onDelete={onDelete} /> : lines.map((line) => (
-                  <LineBox key={line.id} line={line} checked={splitLines.includes(line.id)} onToggle={onToggleLine} onSave={onLine} onDelete={onDelete} />
-                ))}
-                <AddLine section={section} groupName={section === "PERSONAL" ? "Evento" : ""} onAdd={onAdd} />
+                <h3>
+                  {section === "PERSONAL"
+                    ? "Personal"
+                    : section.charAt(0) + section.slice(1).toLowerCase()}
+                </h3>
+                {section === "PERSONAL" ? (
+                  <Personnel
+                    lines={lines}
+                    splitLines={splitLines}
+                    onToggle={onToggleLine}
+                    onSave={onLine}
+                    onDelete={onDelete}
+                  />
+                ) : (
+                  lines.map((line) => (
+                    <LineBox
+                      key={line.id}
+                      line={line}
+                      checked={splitLines.includes(line.id)}
+                      onToggle={onToggleLine}
+                      onSave={onLine}
+                      onDelete={onDelete}
+                    />
+                  ))
+                )}
+                <AddLine
+                  section={section}
+                  groupName={section === "PERSONAL" ? "Evento" : ""}
+                  onAdd={onAdd}
+                />
               </div>
             );
           })}
@@ -510,7 +675,11 @@ function BeoView({
         </label>
         <label>
           Separar hacia el salón
-          <input aria-label="Salón de la B.E.O. separada" value={splitSalon} onChange={(event) => onSplitSalon(event.target.value)} />
+          <input
+            aria-label="Salón de la B.E.O. separada"
+            value={splitSalon}
+            onChange={(event) => onSplitSalon(event.target.value)}
+          />
         </label>
         <button type="button" onClick={onSplit}>
           Separar
@@ -543,7 +712,14 @@ function Personnel({
           <div key={group}>
             <h4>{group}</h4>
             {grouped.map((line) => (
-              <LineBox key={line.id} line={line} checked={splitLines.includes(line.id)} onToggle={onToggle} onSave={onSave} onDelete={onDelete} />
+              <LineBox
+                key={line.id}
+                line={line}
+                checked={splitLines.includes(line.id)}
+                onToggle={onToggle}
+                onSave={onSave}
+                onDelete={onDelete}
+              />
             ))}
           </div>
         );
@@ -566,7 +742,10 @@ function FieldBox({
   const open = field.status !== "RULE";
   const mark = badge(field.status);
   return (
-    <label className={`review-field ${tone(field.status)}`} data-testid={open ? "campo-abierto" : "campo"}>
+    <label
+      className={`review-field ${tone(field.status)}`}
+      data-testid={open ? "campo-abierto" : "campo"}
+    >
       <span>
         {FIELD_LABELS[field.key] ?? field.key}
         {mark ? <em className="badge">{mark}</em> : null}
@@ -578,13 +757,22 @@ function FieldBox({
         onBlur={(event) => onSave(field.key, event.target.value, remember)}
       />
       {field.status === "AI" || field.status === "REVIEW" ? (
-        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => onValidate(field.key)}>
+        <button
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onValidate(field.key)}
+        >
           Validar
         </button>
       ) : null}
       {field.key === "salonName" && open ? (
         <span>
-          <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> Recordar esta corrección
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(event) => setRemember(event.target.checked)}
+          />{" "}
+          Recordar esta corrección
         </span>
       ) : null}
     </label>
@@ -607,14 +795,37 @@ function LineBox({
   const open = line.status !== "RULE";
   const price = line.unitPriceCents === null ? "" : formatAmount(line.unitPriceCents);
   return (
-    <div className={`review-line ${tone(line.status)}`} data-testid={open ? "linea-abierta" : "linea"}>
+    <div
+      className={`review-line ${tone(line.status)}`}
+      data-testid={open ? "linea-abierta" : "linea"}
+    >
       <label>
         Separar
-        <input type="checkbox" checked={checked} aria-label={`Separar ${line.description}`} onChange={() => onToggle(line.id)} />
+        <input
+          type="checkbox"
+          checked={checked}
+          aria-label={`Separar ${line.description}`}
+          onChange={() => onToggle(line.id)}
+        />
       </label>
-      <input aria-label="Cantidad" defaultValue={String(line.qty)} key={`${line.id}-qty-${line.qty}`} onBlur={(event) => onSave(line, Number(event.target.value), line.description, price)} />
-      <input aria-label="Descripción" defaultValue={line.description} key={`${line.id}-desc-${line.description}`} onBlur={(event) => onSave(line, line.qty, event.target.value, price)} />
-      <input aria-label="Precio unitario" defaultValue={price} key={`${line.id}-price-${price}`} onBlur={(event) => onSave(line, line.qty, line.description, event.target.value)} />
+      <input
+        aria-label="Cantidad"
+        defaultValue={String(line.qty)}
+        key={`${line.id}-qty-${line.qty}`}
+        onBlur={(event) => onSave(line, Number(event.target.value), line.description, price)}
+      />
+      <input
+        aria-label="Descripción"
+        defaultValue={line.description}
+        key={`${line.id}-desc-${line.description}`}
+        onBlur={(event) => onSave(line, line.qty, event.target.value, price)}
+      />
+      <input
+        aria-label="Precio unitario"
+        defaultValue={price}
+        key={`${line.id}-price-${price}`}
+        onBlur={(event) => onSave(line, line.qty, line.description, event.target.value)}
+      />
       <p>{line.text}</p>
       {badge(line.status) ? <em className="badge">{badge(line.status)}</em> : null}
       <button type="button" className="quiet" onClick={() => onDelete(line.id)}>
@@ -631,7 +842,13 @@ function AddLine({
 }: {
   section: string;
   groupName: string;
-  onAdd: (section: string, groupName: string, qty: number, description: string, unitPrice: string) => void;
+  onAdd: (
+    section: string,
+    groupName: string,
+    qty: number,
+    description: string,
+    unitPrice: string,
+  ) => void;
 }) {
   const [description, setDescription] = useState("");
   const [qty, setQty] = useState("1");
@@ -648,15 +865,27 @@ function AddLine({
     >
       <label>
         Cantidad
-        <input aria-label={`Cantidad nueva ${section}`} value={qty} onChange={(event) => setQty(event.target.value)} />
+        <input
+          aria-label={`Cantidad nueva ${section}`}
+          value={qty}
+          onChange={(event) => setQty(event.target.value)}
+        />
       </label>
       <label>
         Descripción
-        <input aria-label={`Descripción nueva ${section}`} value={description} onChange={(event) => setDescription(event.target.value)} />
+        <input
+          aria-label={`Descripción nueva ${section}`}
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+        />
       </label>
       <label>
         Precio
-        <input aria-label={`Precio nuevo ${section}`} value={price} onChange={(event) => setPrice(event.target.value)} />
+        <input
+          aria-label={`Precio nuevo ${section}`}
+          value={price}
+          onChange={(event) => setPrice(event.target.value)}
+        />
       </label>
       <button type="submit">Agregar línea</button>
     </form>

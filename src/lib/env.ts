@@ -28,11 +28,53 @@ const envSchema = z.object({
       return false;
     }
   }, "GOOGLE_SERVICE_ACCOUNT_JSON debe ser un JSON de cuenta de servicio"),
-  GOOGLE_DRIVE_FOLDER_ID: optionalText,
+  GOOGLE_OAUTH_CLIENT_ID: optionalText,
+  GOOGLE_OAUTH_CLIENT_SECRET: optionalText,
+  GOOGLE_OAUTH_REFRESH_TOKEN: optionalText,
+  DRIVE_ROOT_FOLDER_ID: optionalText,
+  DRIVE_UPLOAD_PDF: z
+    .string()
+    .trim()
+    .optional()
+    .superRefine((value, context) => {
+      if (value === undefined || value === "") {
+        return;
+      }
+      if (!/^(1|0|true|false|yes|no|si|sí)$/i.test(value)) {
+        context.addIssue({ code: "custom", message: "debe ser true o false" });
+      }
+    })
+    .transform((value) => value !== undefined && /^(1|true|yes|si|sí)$/i.test(value)),
   PORT: z.coerce.number().int().positive().default(3000),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
+
+const OAUTH_KEYS = [
+  "GOOGLE_OAUTH_CLIENT_ID",
+  "GOOGLE_OAUTH_CLIENT_SECRET",
+  "GOOGLE_OAUTH_REFRESH_TOKEN",
+] as const;
+
+export type DriveMode = "service-account" | "oauth" | "none";
+
+/** Carpeta raíz y modo de acceso. Sin carpeta o sin credenciales, Drive queda apagado. */
+export function driveSettings(env: AppEnv): {
+  configured: boolean;
+  rootFolderId?: string;
+  uploadPdf: boolean;
+  mode: DriveMode;
+} {
+  const oauth = OAUTH_KEYS.every((key) => Boolean(env[key]));
+  const serviceAccount = Boolean(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  const mode: DriveMode = serviceAccount ? "service-account" : oauth ? "oauth" : "none";
+  return {
+    configured: Boolean(env.DRIVE_ROOT_FOLDER_ID) && mode !== "none",
+    rootFolderId: env.DRIVE_ROOT_FOLDER_ID,
+    uploadPdf: env.DRIVE_UPLOAD_PDF,
+    mode,
+  };
+}
 
 export type EnvSource = Record<string, string | undefined>;
 
@@ -64,12 +106,25 @@ export function parseEnv(source: EnvSource): AppEnv {
     OPENAI_MODEL: blankToUndefined(source.OPENAI_MODEL) ?? "gpt-4.1-mini",
     OPENAI_TIMEOUT_MS: blankToUndefined(source.OPENAI_TIMEOUT_MS) ?? "20000",
     GOOGLE_SERVICE_ACCOUNT_JSON: blankToUndefined(source.GOOGLE_SERVICE_ACCOUNT_JSON),
-    GOOGLE_DRIVE_FOLDER_ID: blankToUndefined(source.GOOGLE_DRIVE_FOLDER_ID),
+    GOOGLE_OAUTH_CLIENT_ID: blankToUndefined(source.GOOGLE_OAUTH_CLIENT_ID),
+    GOOGLE_OAUTH_CLIENT_SECRET: blankToUndefined(source.GOOGLE_OAUTH_CLIENT_SECRET),
+    GOOGLE_OAUTH_REFRESH_TOKEN: blankToUndefined(source.GOOGLE_OAUTH_REFRESH_TOKEN),
+    DRIVE_ROOT_FOLDER_ID:
+      blankToUndefined(source.DRIVE_ROOT_FOLDER_ID) ??
+      blankToUndefined(source.GOOGLE_DRIVE_FOLDER_ID),
+    DRIVE_UPLOAD_PDF: blankToUndefined(source.DRIVE_UPLOAD_PDF),
     PORT: blankToUndefined(source.PORT),
   });
 
   if (!parsed.success) {
     throw new Error(`Configuración de entorno inválida: ${issueMessage(parsed.error)}`);
+  }
+
+  const missingOauth = OAUTH_KEYS.filter((key) => !parsed.data[key]);
+  if (missingOauth.length > 0 && missingOauth.length < OAUTH_KEYS.length) {
+    throw new Error(
+      `Configuración de entorno inválida: faltan credenciales OAuth de Drive: ${missingOauth.join(", ")}`,
+    );
   }
 
   return parsed.data;
@@ -83,6 +138,9 @@ export function loadEnv(
   const env = parseEnv(source);
   if (!env.OPENAI_API_KEY) {
     logger.warn("OPENAI_API_KEY no está definida: la normalización con IA estará deshabilitada.");
+  }
+  if (!driveSettings(env).configured) {
+    logger.warn("Drive no está configurado: los documentos quedarán pendientes de subir.");
   }
   return env;
 }

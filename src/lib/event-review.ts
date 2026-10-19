@@ -75,7 +75,10 @@ function isOpen(status: string): boolean {
 }
 
 function pendingOf(fields: { status: string }[], lines: { status: string }[]): number {
-  return fields.filter((field) => isOpen(field.status)).length + lines.filter((line) => isOpen(line.status)).length;
+  return (
+    fields.filter((field) => isOpen(field.status)).length +
+    lines.filter((line) => isOpen(line.status)).length
+  );
 }
 
 function jsonValue(value: unknown): JsonValue {
@@ -95,7 +98,12 @@ function parseAmount(text: string): number | null {
   return Math.round(amount * 100);
 }
 
-function lineText(section: string, qty: number, description: string, unitPriceCents: number | null): string {
+function lineText(
+  section: string,
+  qty: number,
+  description: string,
+  unitPriceCents: number | null,
+): string {
   if (section === "ALIMENTOS") {
     const price = unitPriceCents === null ? "—" : formatCents(unitPriceCents);
     return `${description}\nN° pax: ${qty}\nPRECIO: USD ${price} c/u x ${qty} pax`;
@@ -168,14 +176,21 @@ function toReview(
 
   const shared = {} as EventReview["shared"];
   for (const key of SHARED_KEYS) {
-    const field = beos.flatMap((beo) => beo.fields).find((item) => item.key === key && item.source !== "beo.override");
-    shared[key] = field?.value ?? beos.flatMap((beo) => beo.fields).find((item) => item.key === key)?.value ?? null;
+    const field = beos
+      .flatMap((beo) => beo.fields)
+      .find((item) => item.key === key && item.source !== "beo.override");
+    shared[key] =
+      field?.value ??
+      beos.flatMap((beo) => beo.fields).find((item) => item.key === key)?.value ??
+      null;
   }
 
   return {
     eventId: event.id,
     title: event.title,
-    pendingCount: beos.reduce((sum, beo) => sum + beo.pendingCount, 0) + memos.reduce((sum, memo) => sum + memo.pendingCount, 0),
+    pendingCount:
+      beos.reduce((sum, beo) => sum + beo.pendingCount, 0) +
+      memos.reduce((sum, memo) => sum + memo.pendingCount, 0),
     shared,
     beos,
     memos,
@@ -199,7 +214,12 @@ export async function addMemoToEvent(eventId: string, memoTypeId: string): Promi
   return getEventReview(eventId);
 }
 
-export async function editMemoField(eventId: string, memoId: string, key: string, value: string): Promise<EventReview> {
+export async function editMemoField(
+  eventId: string,
+  memoId: string,
+  key: string,
+  value: string,
+): Promise<EventReview> {
   try {
     await updateMemoField(eventId, memoId, key, value);
   } catch (error) {
@@ -215,7 +235,11 @@ export async function editMemoField(eventId: string, memoId: string, key: string
   return review;
 }
 
-export async function confirmMemoField(eventId: string, memoId: string, key: string): Promise<EventReview> {
+export async function confirmMemoField(
+  eventId: string,
+  memoId: string,
+  key: string,
+): Promise<EventReview> {
   try {
     await validateMemoField(eventId, memoId, key);
   } catch (error) {
@@ -229,17 +253,35 @@ export async function regenerateMemo(
   eventId: string,
   memoId: string,
   toPdf?: (docx: Buffer) => Promise<Buffer>,
-): Promise<EventReview & { files: { id: string; fileName: string; number: string; exceedsPage: boolean; kind: string }[] }> {
+): Promise<
+  EventReview & {
+    files: {
+      id: string;
+      fileName: string;
+      number: string;
+      exceedsPage: boolean;
+      kind: string;
+      driveStatus: string;
+      driveUrl: string | null;
+    }[];
+    driveMessage: string | null;
+  }
+> {
   const { regenerateEventMemo } = await import("./memo-documents");
   const { listEventDocuments } = await import("./beo-documents");
+  const { publishGeneratedDocuments } = await import("./drive-archive");
+  let writtenId: string | null = null;
   try {
-    await regenerateEventMemo(eventId, memoId, toPdf);
+    writtenId = (await regenerateEventMemo(eventId, memoId, toPdf)).id;
+    await publishGeneratedDocuments([writtenId]);
   } catch (error) {
-    asReviewError(error);
+    if (!writtenId) {
+      asReviewError(error);
+    }
   }
   const review = await getEventReview(eventId);
   const listed = await listEventDocuments(eventId);
-  return { ...review, files: listed.files };
+  return { ...review, files: listed.files, driveMessage: listed.driveMessage };
 }
 export async function getEventReview(eventId: string): Promise<EventReview> {
   const event = await loadEvent(eventId);
@@ -295,7 +337,9 @@ export async function updateBeoField(input: {
     throw new ReviewError("No se encontró el campo.", 404);
   }
   const next = storedFieldValue(input.key, input.value);
-  const source = (SHARED_KEYS as readonly string[]).includes(input.key) ? "beo.override" : "beo.edit";
+  const source = (SHARED_KEYS as readonly string[]).includes(input.key)
+    ? "beo.override"
+    : "beo.edit";
   await getPrisma().beoField.update({
     where: { id: field.id },
     data: { value: next, status: "RULE", source },
@@ -327,7 +371,11 @@ export async function updateBeoField(input: {
   return getEventReview(input.eventId);
 }
 
-export async function validateBeoField(eventId: string, beoId: string, key: string): Promise<EventReview> {
+export async function validateBeoField(
+  eventId: string,
+  beoId: string,
+  key: string,
+): Promise<EventReview> {
   const beo = await ownedBeo(eventId, beoId);
   const field = beo.fields.find((item) => item.key === key);
   if (!field) {
@@ -347,7 +395,11 @@ export async function validateBeoField(eventId: string, beoId: string, key: stri
   return getEventReview(eventId);
 }
 
-export async function updateSharedField(eventId: string, key: string, value: string): Promise<EventReview> {
+export async function updateSharedField(
+  eventId: string,
+  key: string,
+  value: string,
+): Promise<EventReview> {
   if (!(SHARED_KEYS as readonly string[]).includes(key)) {
     throw new ReviewError("Ese dato no se comparte entre las B.E.O.", 400);
   }
@@ -448,7 +500,11 @@ export async function updateBeoLine(input: {
     action: "beo.line.update",
     entity: "BeoLine",
     entityId: line.id,
-    before: jsonValue({ qty: line.qty, description: line.description, unitPriceCents: line.unitPriceCents }),
+    before: jsonValue({
+      qty: line.qty,
+      description: line.description,
+      unitPriceCents: line.unitPriceCents,
+    }),
     after: jsonValue({ qty: input.qty, description, unitPriceCents }),
   });
   return getEventReview(input.eventId);
@@ -466,12 +522,20 @@ export async function deleteBeoLine(eventId: string, lineId: string): Promise<Ev
     action: "beo.line.delete",
     entity: "BeoLine",
     entityId: line.id,
-    before: jsonValue({ description: line.description, qty: line.qty, unitPriceCents: line.unitPriceCents }),
+    before: jsonValue({
+      description: line.description,
+      qty: line.qty,
+      unitPriceCents: line.unitPriceCents,
+    }),
   });
   return getEventReview(eventId);
 }
 
-export async function mergeBeos(eventId: string, targetId: string, sourceId: string): Promise<EventReview> {
+export async function mergeBeos(
+  eventId: string,
+  targetId: string,
+  sourceId: string,
+): Promise<EventReview> {
   if (targetId === sourceId) {
     throw new ReviewError("Elige dos B.E.O. distintas.", 400);
   }
@@ -559,8 +623,38 @@ export async function splitBeo(input: {
 /** Genera las B.E.O. del evento cuando ya no quedan pendientes. */
 export async function startGeneration(
   eventId: string,
-  options?: { numbers?: string[]; acknowledge?: boolean; toPdf?: (docx: Buffer) => Promise<Buffer> },
-): Promise<{ started: true; documents: number; files: { id: string; fileName: string; number: string; exceedsPage: boolean; kind: string }[] }> {
+  options?: {
+    numbers?: string[];
+    acknowledge?: boolean;
+    toPdf?: (docx: Buffer) => Promise<Buffer>;
+  },
+): Promise<import("./beo-documents").GenerationResult> {
   const { generateEventDocuments } = await import("./beo-documents");
   return generateEventDocuments(eventId, options);
+}
+
+/** Reintenta la subida a Drive de un documento que sigue pendiente o en error. */
+export async function retryDriveUpload(
+  eventId: string,
+  documentId: string,
+): Promise<
+  EventReview & {
+    files: {
+      id: string;
+      fileName: string;
+      number: string;
+      exceedsPage: boolean;
+      kind: string;
+      driveStatus: string;
+      driveUrl: string | null;
+    }[];
+    driveMessage: string | null;
+  }
+> {
+  const { retryGeneratedDocument } = await import("./drive-archive");
+  const { listEventDocuments } = await import("./beo-documents");
+  await retryGeneratedDocument(eventId, documentId);
+  const review = await getEventReview(eventId);
+  const listed = await listEventDocuments(eventId);
+  return { ...review, files: listed.files, driveMessage: listed.driveMessage };
 }

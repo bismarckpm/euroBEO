@@ -353,10 +353,13 @@ model GeneratedDocument {
   docxPath    String
   pdfPath     String
   sha256      String
-  exceedsPage Boolean  @default(false)
-  templateId  String
-  template    Template @relation(fields: [templateId], references: [id])
-  createdAt   DateTime @default(now())
+  exceedsPage   Boolean  @default(false)
+  templateId    String
+  template      Template @relation(fields: [templateId], references: [id])
+  driveStatus   String   @default("pendiente")
+  driveUrl      String?
+  driveAttempts Int      @default(0)
+  createdAt     DateTime @default(now())
 
   @@index([eventId])
   @@index([number])
