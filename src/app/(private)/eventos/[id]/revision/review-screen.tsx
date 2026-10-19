@@ -225,7 +225,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
           <h1>Revisión</h1>
           <p className="lede">{review.title}</p>
         </div>
-        <div>
+        <div className="review-actions">
           <p data-testid="pendientes-evento">
             {review.pendingCount === 0 ? "Sin pendientes" : `Faltan ${review.pendingCount}`}
           </p>
@@ -282,7 +282,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
         </p>
       ) : null}
       {files.length > 0 ? (
-        <section data-testid="descargas">
+        <section className="downloads" data-testid="descargas">
           {driveNotice ? <p data-testid="drive-aviso">{driveNotice}</p> : null}
           {files.map((file) => (
             <p key={file.id}>
@@ -931,38 +931,51 @@ function LineBox({
       className={`review-line ${tone(line.status)}`}
       data-testid={open ? "linea-abierta" : "linea"}
     >
+      <div className="line-toolbar">
+        <label className="check-line">
+          <input
+            type="checkbox"
+            checked={checked}
+            aria-label={`Separar ${line.description}`}
+            onChange={() => onToggle(line.id)}
+          />
+          Separar
+        </label>
+        {badge(line.status) ? <em className="badge">{badge(line.status)}</em> : null}
+        <button type="button" className="quiet" onClick={() => onDelete(line.id)}>
+          Quitar
+        </button>
+      </div>
+      <div className="line-fields">
+        <label>
+          Cantidad
+          <input
+            aria-label="Cantidad"
+            defaultValue={String(line.qty)}
+            key={`${line.id}-qty-${line.qty}`}
+            onBlur={(event) => onSave(line, Number(event.target.value), line.description, price)}
+          />
+        </label>
+        <label>
+          Precio
+          <input
+            aria-label="Precio unitario"
+            defaultValue={price}
+            key={`${line.id}-price-${price}`}
+            onBlur={(event) => onSave(line, line.qty, line.description, event.target.value)}
+          />
+        </label>
+      </div>
       <label>
-        Separar
+        Descripción
         <input
-          type="checkbox"
-          checked={checked}
-          aria-label={`Separar ${line.description}`}
-          onChange={() => onToggle(line.id)}
+          aria-label="Descripción"
+          defaultValue={line.description}
+          key={`${line.id}-desc-${line.description}`}
+          onBlur={(event) => onSave(line, line.qty, event.target.value, price)}
         />
       </label>
-      <input
-        aria-label="Cantidad"
-        defaultValue={String(line.qty)}
-        key={`${line.id}-qty-${line.qty}`}
-        onBlur={(event) => onSave(line, Number(event.target.value), line.description, price)}
-      />
-      <input
-        aria-label="Descripción"
-        defaultValue={line.description}
-        key={`${line.id}-desc-${line.description}`}
-        onBlur={(event) => onSave(line, line.qty, event.target.value, price)}
-      />
-      <input
-        aria-label="Precio unitario"
-        defaultValue={price}
-        key={`${line.id}-price-${price}`}
-        onBlur={(event) => onSave(line, line.qty, line.description, event.target.value)}
-      />
-      <p>{line.text}</p>
-      {badge(line.status) ? <em className="badge">{badge(line.status)}</em> : null}
-      <button type="button" className="quiet" onClick={() => onDelete(line.id)}>
-        Quitar
-      </button>
+      {line.text ? <p className="line-source">{line.text}</p> : null}
     </div>
   );
 }
@@ -987,7 +1000,7 @@ function AddLine({
   const [price, setPrice] = useState("");
   return (
     <form
-      className="form-inline"
+      className="add-line"
       onSubmit={(event) => {
         event.preventDefault();
         onAdd(section, groupName, Number(qty), description, price);

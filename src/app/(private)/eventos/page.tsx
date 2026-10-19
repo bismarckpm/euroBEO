@@ -37,6 +37,7 @@ export default async function EventosPage({ searchParams }: PageProps) {
         </label>
         <button type="submit">Buscar</button>
       </form>
+      <div className="table-scroll">
       <table data-testid="lista-eventos">
         <thead>
           <tr>
@@ -68,6 +69,7 @@ export default async function EventosPage({ searchParams }: PageProps) {
           ))}
         </tbody>
       </table>
+      </div>
       <p>
         {result.page > 1 ? (
           <Link

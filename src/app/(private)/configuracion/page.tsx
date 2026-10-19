@@ -201,6 +201,7 @@ export default async function ConfigurationPage({
             </label>
             <button type="submit">Agregar sección</button>
           </form>
+          <div className="table-scroll">
           <table>
             <thead>
               <tr>
@@ -241,6 +242,7 @@ export default async function ConfigurationPage({
               ))}
             </tbody>
           </table>
+          </div>
         </section>
       ) : null}
 
