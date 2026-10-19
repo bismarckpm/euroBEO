@@ -414,6 +414,7 @@ export type MemoInput = {
   body: string;
   keywords: string;
   templateFile: string;
+  excludeSetupDays?: boolean;
 };
 
 export type MemoRow = {
@@ -425,6 +426,7 @@ export type MemoRow = {
   body: string;
   keywords: string[];
   templateFile: string;
+  excludeSetupDays: boolean;
 };
 
 function parseMemo(input: MemoInput): Omit<MemoRow, "id"> {
@@ -443,6 +445,7 @@ function parseMemo(input: MemoInput): Omit<MemoRow, "id"> {
     body: parsed(longText, input.body, "El cuerpo es obligatorio."),
     keywords,
     templateFile: parsed(fileText, input.templateFile, "La plantilla .docx es obligatoria."),
+    excludeSetupDays: input.excludeSetupDays ?? true,
   };
 }
 

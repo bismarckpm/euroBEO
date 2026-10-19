@@ -1,9 +1,16 @@
 import { formatCents, personnelLine } from "../core/beo/format";
-import { normalizeLabel } from "../core/config/normalize";
 import { recordAudit, type JsonValue } from "./audit";
-import { listMemos } from "./catalog-db";
 import { createBeoProposal } from "./beo-store";
+import { listMemos } from "./catalog-db";
 import { getPrisma } from "./db";
+import {
+  addEventMemo,
+  MemoFlowError,
+  syncEventMemos,
+  updateMemoField,
+  validateMemoField,
+  type EventMemo,
+} from "./event-memos";
 import { NormalizationInputError, saveLearnedNormalization } from "./normalization";
 
 const OPEN_STATUS = new Set(["PENDING", "AI", "REVIEW"]);
@@ -51,11 +58,7 @@ export type ReviewBeo = {
   lines: ReviewLine[];
 };
 
-export type ReviewMemo = {
-  id: string;
-  name: string;
-  pendingCount: number;
-};
+export type ReviewMemo = EventMemo;
 
 export type EventReview = {
   eventId: string;
@@ -64,6 +67,7 @@ export type EventReview = {
   shared: Record<(typeof SHARED_KEYS)[number], string | null>;
   beos: ReviewBeo[];
   memos: ReviewMemo[];
+  memoTypes: { id: string; name: string }[];
 };
 
 function isOpen(status: string): boolean {
@@ -125,6 +129,7 @@ async function loadEvent(eventId: string) {
 function toReview(
   event: Awaited<ReturnType<typeof loadEvent>>,
   memos: ReviewMemo[],
+  memoTypes: { id: string; name: string }[],
 ): EventReview {
   const beos = [...event.beos]
     .sort((left, right) => {
@@ -174,20 +179,68 @@ function toReview(
     shared,
     beos,
     memos,
+    memoTypes,
   };
 }
 
-async function proposedMemos(event: Awaited<ReturnType<typeof loadEvent>>): Promise<ReviewMemo[]> {
-  const catalog = await listMemos();
-  const benefits = event.budgets[0]?.benefits.map((benefit) => benefit.text) ?? [];
-  return catalog.flatMap((memo) => {
-    const keywords = memo.keywords.map((keyword) => normalizeLabel(keyword));
-    const matched = benefits.some((benefit) => keywords.some((keyword) => normalizeLabel(benefit).includes(keyword)));
-    return matched ? [{ id: memo.id, name: memo.name, pendingCount: 0 }] : [];
-  });
+function asReviewError(error: unknown): never {
+  if (error instanceof MemoFlowError) {
+    throw new ReviewError(error.message, error.status);
+  }
+  throw error;
 }
 
-/** Lee el evento. Si todavía no hay borradores, propone las B.E.O. desde el presupuesto. */
+export async function addMemoToEvent(eventId: string, memoTypeId: string): Promise<EventReview> {
+  try {
+    await addEventMemo(eventId, memoTypeId);
+  } catch (error) {
+    asReviewError(error);
+  }
+  return getEventReview(eventId);
+}
+
+export async function editMemoField(eventId: string, memoId: string, key: string, value: string): Promise<EventReview> {
+  try {
+    await updateMemoField(eventId, memoId, key, value);
+  } catch (error) {
+    asReviewError(error);
+  }
+  const review = await getEventReview(eventId);
+  await recordAudit({
+    action: "memo.field.update",
+    entity: "MemoField",
+    entityId: memoId,
+    after: jsonValue({ key, value }),
+  });
+  return review;
+}
+
+export async function confirmMemoField(eventId: string, memoId: string, key: string): Promise<EventReview> {
+  try {
+    await validateMemoField(eventId, memoId, key);
+  } catch (error) {
+    asReviewError(error);
+  }
+  return getEventReview(eventId);
+}
+
+/** Genera otra versión del memorándum cuando una B.E.O. lo dejó desactualizado. */
+export async function regenerateMemo(
+  eventId: string,
+  memoId: string,
+  toPdf?: (docx: Buffer) => Promise<Buffer>,
+): Promise<EventReview & { files: { id: string; fileName: string; number: string; exceedsPage: boolean; kind: string }[] }> {
+  const { regenerateEventMemo } = await import("./memo-documents");
+  const { listEventDocuments } = await import("./beo-documents");
+  try {
+    await regenerateEventMemo(eventId, memoId, toPdf);
+  } catch (error) {
+    asReviewError(error);
+  }
+  const review = await getEventReview(eventId);
+  const listed = await listEventDocuments(eventId);
+  return { ...review, files: listed.files };
+}
 export async function getEventReview(eventId: string): Promise<EventReview> {
   const event = await loadEvent(eventId);
   if (event.beos.length === 0) {
@@ -197,7 +250,8 @@ export async function getEventReview(eventId: string): Promise<EventReview> {
     await createBeoProposal(eventId);
     return getEventReview(eventId);
   }
-  return toReview(event, await proposedMemos(event));
+  const memoTypes = (await listMemos()).map((memo) => ({ id: memo.id, name: memo.name }));
+  return toReview(event, await syncEventMemos(event.id), memoTypes);
 }
 
 async function ownedBeo(eventId: string, beoId: string) {
@@ -246,6 +300,9 @@ export async function updateBeoField(input: {
     where: { id: field.id },
     data: { value: next, status: "RULE", source },
   });
+  if (input.key === "salonName" && next) {
+    await getPrisma().beo.update({ where: { id: beo.id }, data: { salon: next } });
+  }
   await recordAudit({
     action: "beo.field.update",
     entity: "BeoField",
