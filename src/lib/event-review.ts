@@ -53,6 +53,8 @@ export type ReviewBeo = {
   salon: string;
   kind: string;
   needsReview: boolean;
+  status: string;
+  version: number;
   pendingCount: number;
   fields: ReviewField[];
   lines: ReviewLine[];
@@ -153,6 +155,8 @@ function toReview(
       salon: beo.salon,
       kind: beo.kind,
       needsReview: beo.needsReview,
+      status: beo.status,
+      version: beo.version,
       pendingCount: pendingOf(beo.fields, beo.lines),
       fields: beo.fields.map((field) => ({
         id: field.id,
@@ -189,7 +193,9 @@ function toReview(
     eventId: event.id,
     title: event.title,
     pendingCount:
-      beos.reduce((sum, beo) => sum + beo.pendingCount, 0) +
+      beos
+        .filter((beo) => beo.status !== "voided")
+        .reduce((sum, beo) => sum + beo.pendingCount, 0) +
       memos.reduce((sum, memo) => sum + memo.pendingCount, 0),
     shared,
     beos,
@@ -631,6 +637,51 @@ export async function startGeneration(
 ): Promise<import("./beo-documents").GenerationResult> {
   const { generateEventDocuments } = await import("./beo-documents");
   return generateEventDocuments(eventId, options);
+}
+
+/** Anula una B.E.O. generada. El número queda usado y sale de la descarga del evento. */
+export async function voidBeo(eventId: string, beoId: string): Promise<EventReview> {
+  const beo = await ownedBeo(eventId, beoId);
+  if (beo.status === "voided") {
+    return getEventReview(eventId);
+  }
+  if (beo.status !== "generated") {
+    throw new ReviewError("Solo se puede anular una B.E.O. ya generada.", 409);
+  }
+  await getPrisma().beo.update({ where: { id: beoId }, data: { status: "voided" } });
+  const { markMemosStale } = await import("./event-memos");
+  await markMemosStale(eventId);
+  await recordAudit({
+    action: "beo.void",
+    entity: "Beo",
+    entityId: beoId,
+    after: jsonValue({ status: "voided" }),
+  });
+  return getEventReview(eventId);
+}
+
+/** Regenera solo las B.E.O. y memorándums elegidos, con el mismo número. */
+export async function regenerateSelected(
+  eventId: string,
+  input: { beoIds: string[]; memoIds: string[]; toPdf?: (docx: Buffer) => Promise<Buffer> },
+): Promise<
+  EventReview & {
+    files: { id: string; fileName: string; number: string }[];
+    driveMessage: string | null;
+    started: true;
+  }
+> {
+  const { regenerateSelectedDocuments } = await import("./beo-documents");
+  const { listEventDocuments } = await import("./beo-documents");
+  const generated = await regenerateSelectedDocuments(eventId, input);
+  const review = await getEventReview(eventId);
+  const listed = await listEventDocuments(eventId);
+  return {
+    ...review,
+    started: true,
+    files: listed.files,
+    driveMessage: generated.driveMessage ?? listed.driveMessage,
+  };
 }
 
 /** Reintenta la subida a Drive de un documento que sigue pendiente o en error. */

@@ -4,6 +4,7 @@ import path from "node:path";
 import { countPages } from "../core/documents/count-pages";
 import { PdfConversionError, convertToPdf } from "../core/documents/convert-pdf";
 import { fillDocx } from "../core/documents/render-docx";
+import { documentSnapshot } from "../core/history/compare";
 import { memoDownloadName, memoTemplateDataSchema } from "../core/memo/template-data";
 import { getPrisma } from "./db";
 import { refreshMemoFromBeos, MemoFlowError } from "./event-memos";
@@ -15,6 +16,11 @@ export type MemoFile = {
   number: string;
   exceedsPage: boolean;
   kind: string;
+  version: number;
+  createdAt: string;
+  beoId: null;
+  voided: false;
+  earlier: [];
 };
 
 async function templateFor(templateFile: string): Promise<{ id: string; bytes: Buffer }> {
@@ -108,6 +114,7 @@ async function writeMemoFile(input: {
       sha256: createHash("sha256").update(docx).digest("hex"),
       exceedsPage: pages > 1,
       templateId: template.id,
+      snapshot: documentSnapshot({ fields: input.fields }),
     },
   });
   await getPrisma().memo.update({
@@ -120,6 +127,16 @@ async function writeMemoFile(input: {
     number: data.numero,
     exceedsPage: pages > 1,
     kind: "memo",
+    version: input.version,
+    createdAt: new Intl.DateTimeFormat("en-GB", {
+      timeZone: "America/Caracas",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(saved.createdAt),
+    beoId: null,
+    voided: false,
+    earlier: [],
   };
 }
 
@@ -158,7 +175,10 @@ export async function regenerateEventMemo(
 ): Promise<MemoFile> {
   try {
     const memo = await refreshMemoFromBeos(eventId, memoId);
-    const event = await getPrisma().event.findUnique({ where: { id: eventId }, select: { title: true } });
+    const event = await getPrisma().event.findUnique({
+      where: { id: eventId },
+      select: { title: true },
+    });
     return await writeMemoFile({
       eventId,
       eventTitle: event?.title ?? "",

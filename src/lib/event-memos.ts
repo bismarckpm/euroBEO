@@ -29,6 +29,7 @@ export type EventMemo = {
   pendingCount: number;
   stale: boolean;
   version: number;
+  generated: boolean;
   fields: EventMemoField[];
 };
 
@@ -59,11 +60,7 @@ function pendingOf(fields: { status: string }[]): number {
   return fields.filter((field) => OPEN_STATUS.has(field.status)).length;
 }
 
-function triggered(
-  keywords: string[],
-  benefits: string[],
-  triggers: string[],
-): boolean {
+function triggered(keywords: string[], benefits: string[], triggers: string[]): boolean {
   const needles = keywords.map((keyword) => normalizeLabel(keyword)).filter(Boolean);
   if (needles.length === 0) {
     return false;
@@ -86,6 +83,7 @@ function toEventMemo(memo: MemoRecord): EventMemo {
     pendingCount: pendingOf(memo.fields),
     stale: memo.stale,
     version: memo.version,
+    generated: memo.documents.length > 0,
     fields: memo.fields.map((field) => ({
       id: field.id,
       key: field.key,
@@ -146,11 +144,21 @@ async function applyPlan(memo: MemoRecord, plan: MemoFieldPlan[]): Promise<void>
     }
     if (!current) {
       await prisma.memoField.create({
-        data: { memoId: memo.id, key: field.key, value: field.value || null, status: field.status, source: field.source },
+        data: {
+          memoId: memo.id,
+          key: field.key,
+          value: field.value || null,
+          status: field.status,
+          source: field.source,
+        },
       });
       continue;
     }
-    if (current.value === (field.value || null) && current.status === field.status && current.source === field.source) {
+    if (
+      current.value === (field.value || null) &&
+      current.status === field.status &&
+      current.source === field.source
+    ) {
       continue;
     }
     await prisma.memoField.update({
@@ -160,7 +168,10 @@ async function applyPlan(memo: MemoRecord, plan: MemoFieldPlan[]): Promise<void>
   }
 }
 
-function planFor(memo: MemoRecord, bundle: Awaited<ReturnType<typeof loadBundle>>): MemoFieldPlan[] {
+function planFor(
+  memo: MemoRecord,
+  bundle: Awaited<ReturnType<typeof loadBundle>>,
+): MemoFieldPlan[] {
   return planMemoFields({
     type: memo.memoType,
     beos: bundle.beos,
@@ -256,7 +267,12 @@ export async function addEventMemo(eventId: string, memoTypeId: string): Promise
   });
 }
 
-export async function updateMemoField(eventId: string, memoId: string, key: string, value: string): Promise<void> {
+export async function updateMemoField(
+  eventId: string,
+  memoId: string,
+  key: string,
+  value: string,
+): Promise<void> {
   const prisma = getPrisma();
   const field = await prisma.memoField.findFirst({
     where: { key, memoId, memo: { eventId } },
@@ -277,7 +293,11 @@ export async function updateMemoField(eventId: string, memoId: string, key: stri
   }
 }
 
-export async function validateMemoField(eventId: string, memoId: string, key: string): Promise<void> {
+export async function validateMemoField(
+  eventId: string,
+  memoId: string,
+  key: string,
+): Promise<void> {
   const prisma = getPrisma();
   const field = await prisma.memoField.findFirst({
     where: { key, memoId, memo: { eventId } },

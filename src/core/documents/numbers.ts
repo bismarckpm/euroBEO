@@ -8,7 +8,31 @@ export type PlannedNumber = {
 
 /** Siguientes correlativos, sin consumirlos. */
 export function consecutiveBeoNumbers(last: SequenceState, count: number): string[] {
-  return Array.from({ length: count }, (_, index) => formatBeoNumber(last.lastNumber + 1 + index, last.year));
+  return Array.from({ length: count }, (_, index) =>
+    formatBeoNumber(last.lastNumber + 1 + index, last.year),
+  );
+}
+
+/** Siguientes correlativos que no estén ya usados, incluidos los anulados. */
+export function nextFreeNumbers(
+  last: SequenceState,
+  count: number,
+  used: readonly string[],
+): string[] {
+  const taken = new Set(used);
+  const numbers: string[] = [];
+  let cursor = last.lastNumber;
+  while (numbers.length < count) {
+    cursor += 1;
+    const number = formatBeoNumber(cursor, last.year);
+    if (!taken.has(number)) {
+      numbers.push(number);
+    }
+    if (cursor > last.lastNumber + count + taken.size + 1000) {
+      break;
+    }
+  }
+  return numbers;
 }
 
 /**
