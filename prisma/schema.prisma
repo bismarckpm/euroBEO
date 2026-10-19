@@ -110,6 +110,7 @@ model Event {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   budgets   Budget[]
+  beos      Beo[]
 
   @@index([locator, company])
 }
@@ -219,6 +220,55 @@ model LearnedNormalization {
   updatedAt      DateTime @updatedAt
 
   @@unique([task, normalizedText])
+}
+
+/// Propuesta de B.E.O. `draft` es borrador y `generated` es la ya emitida.
+model Beo {
+  id          String     @id @default(cuid())
+  eventId     String
+  event       Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  position    Int
+  status      String
+  date        String
+  salon       String
+  kind        String
+  needsReview Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  fields      BeoField[]
+  lines       BeoLine[]
+
+  @@index([eventId])
+}
+
+/// Campo trazable de la propuesta: valor, estado y origen.
+model BeoField {
+  id     String  @id @default(cuid())
+  beoId  String
+  beo    Beo     @relation(fields: [beoId], references: [id], onDelete: Cascade)
+  key    String
+  value  String?
+  status String
+  source String
+
+  @@index([beoId])
+}
+
+/// Línea editable de alimentos, personal u otra sección.
+model BeoLine {
+  id             String @id @default(cuid())
+  beoId          String
+  beo            Beo    @relation(fields: [beoId], references: [id], onDelete: Cascade)
+  position       Int
+  section        String
+  groupName      String
+  qty            Int
+  description    String
+  unitPriceCents Int?
+  text           String
+  status         String
+  source         String
+
+  @@index([beoId])
 }
 
 /// Llamada a la IA con el fragmento ya enmascarado y el resultado de la validación.

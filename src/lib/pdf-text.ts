@@ -12,7 +12,7 @@ export class BudgetReadError extends Error {
 export async function extractPdfFragments(data: Uint8Array): Promise<TextFragment[]> {
   let doc: Awaited<ReturnType<typeof getDocument>["promise"]>;
   try {
-    doc = await getDocument({ data, verbosity: 0 }).promise;
+    doc = await getDocument({ data: Uint8Array.from(data), verbosity: 0 }).promise;
   } catch {
     throw new BudgetReadError("El archivo no es un PDF válido.");
   }

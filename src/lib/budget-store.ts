@@ -79,7 +79,7 @@ export async function saveBudget(input: {
         eventId: event.id,
         version: existing ? existing.version + 1 : 1,
         fileName: input.fileName,
-        originalPdf: Buffer.from(input.pdf),
+        originalPdf: new Uint8Array(input.pdf),
         status,
         justification: input.justification,
         subtotalCents: input.budget.totals.subtotal,
