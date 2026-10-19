@@ -249,3 +249,87 @@ td {
   margin: 0.5rem 0 0;
   font-weight: 650;
 }
+
+.review-heading,
+.review-layout,
+.beo-columns,
+.beo-header,
+.review-line {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.review-heading {
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  margin-bottom: 1rem;
+}
+
+.review-layout {
+  grid-template-columns: 16rem 1fr;
+  align-items: start;
+  margin-top: 1rem;
+}
+
+.review-nav {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.review-nav button {
+  display: grid;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  border: 1px solid var(--line);
+}
+
+.review-nav button[aria-current="page"] {
+  background: var(--gold);
+  color: #fff;
+}
+
+.beo-columns {
+  grid-template-columns: 1fr 1fr;
+}
+
+.beo-header {
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+}
+
+.review-field,
+.review-line {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.55rem;
+}
+
+.field-ai {
+  background: #f8edd6;
+}
+
+.field-pending {
+  background: #f8e4e2;
+}
+
+.badge {
+  margin-left: 0.4rem;
+  font-style: normal;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.review-line {
+  grid-template-columns: auto 4rem 1fr 7rem auto auto;
+  align-items: center;
+}
+
+@media (max-width: 800px) {
+  .review-heading,
+  .review-layout,
+  .beo-columns,
+  .review-line {
+    grid-template-columns: 1fr;
+  }
+}
+

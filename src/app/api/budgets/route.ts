@@ -70,6 +70,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({
       saved: true,
       id: saved.id,
+      eventId: saved.eventId,
       version: saved.version,
       message: budget.reconciliation.ok
         ? "Presupuesto leído."

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { BudgetUploadView } from "@/core/budget/view";
 import { formatAmount } from "@/lib/format";
 
@@ -10,6 +11,7 @@ type UploadResponse = BudgetUploadView & {
   needsJustification?: boolean;
   message?: string;
   version?: number;
+  eventId?: string;
 };
 
 export function BudgetUpload() {
@@ -137,6 +139,11 @@ export function BudgetUpload() {
             <p>Disparadores: {result.triggers.join(", ")}.</p>
           ) : null}
           {typeof result.version === "number" ? <p>Versión {result.version}.</p> : null}
+          {result.saved && result.eventId ? (
+            <p>
+              <Link href={`/eventos/${result.eventId}/revision`}>Revisar evento</Link>
+            </p>
+          ) : null}
         </section>
       ) : null}
     </form>
