@@ -20,6 +20,7 @@ import {
   saveSequence,
 } from "@/lib/catalog-db";
 import { CatalogValidationError } from "@/lib/catalog-mutations";
+import { saveTemplateVersion, TemplateError } from "@/lib/template-store";
 import { getCurrentUser } from "@/lib/current-user";
 import {
   deactivateLearnedNormalization,
@@ -37,6 +38,7 @@ const tabs = new Set([
   "memorandums",
   "correlativo",
   "aprendidas",
+  "plantilla",
 ]);
 
 async function requireSession(): Promise<void> {
@@ -47,7 +49,7 @@ async function requireSession(): Promise<void> {
 }
 
 function fail(tab: string, error: unknown): never {
-  if (error instanceof CatalogValidationError) {
+  if (error instanceof CatalogValidationError || error instanceof TemplateError) {
     const target = tabs.has(tab) ? tab : "salones";
     redirect(`/configuracion?tab=${target}&error=${encodeURIComponent(error.message)}`);
   }
@@ -290,6 +292,22 @@ export async function processSample(formData: FormData): Promise<void> {
     llamadas: String(result.calls),
   });
   redirect(`/configuracion?${params.toString()}`);
+}
+
+export async function uploadTemplate(formData: FormData): Promise<void> {
+  await requireSession();
+  const file = formData.get("template");
+  if (!(file instanceof File) || file.size === 0) {
+    redirect(
+      `/configuracion?tab=plantilla&error=${encodeURIComponent("Selecciona una plantilla .docx.")}`,
+    );
+  }
+  try {
+    await saveTemplateVersion(Buffer.from(await file.arrayBuffer()));
+  } catch (error) {
+    fail("plantilla", error);
+  }
+  redirect("/configuracion?tab=plantilla&guardado=1");
 }
 
 function memoFrom(formData: FormData) {

@@ -33,3 +33,6 @@ next-env.d.ts
 # Presupuestos y B.E.O. reales. El README sí se versiona.
 /fixtures/*
 !/fixtures/README.md
+
+# Documentos generados y plantillas subidas en runtime.
+/data

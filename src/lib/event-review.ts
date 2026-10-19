@@ -499,17 +499,11 @@ export async function splitBeo(input: {
   return getEventReview(input.eventId);
 }
 
-/** Deja constancia de que la generación puede empezar. Los documentos los produce el cambio de generación. */
-export async function startGeneration(eventId: string): Promise<{ started: true; documents: number }> {
-  const review = await getEventReview(eventId);
-  if (review.pendingCount > 0) {
-    throw new ReviewError(`Faltan ${review.pendingCount} campos.`, 409);
-  }
-  await recordAudit({
-    action: "event.generate",
-    entity: "Event",
-    entityId: eventId,
-    after: jsonValue({ beos: review.beos.length, memos: review.memos.length }),
-  });
-  return { started: true, documents: review.beos.length + review.memos.length };
+/** Genera las B.E.O. del evento cuando ya no quedan pendientes. */
+export async function startGeneration(
+  eventId: string,
+  options?: { numbers?: string[]; acknowledge?: boolean; toPdf?: (docx: Buffer) => Promise<Buffer> },
+): Promise<{ started: true; documents: number; files: { id: string; fileName: string; number: string; exceedsPage: boolean; kind: string }[] }> {
+  const { generateEventDocuments } = await import("./beo-documents");
+  return generateEventDocuments(eventId, options);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { EventReview, ReviewBeo, ReviewField, ReviewLine } from "@/lib/event-review";
 import { formatAmount } from "@/lib/format";
 
@@ -41,6 +41,13 @@ function badge(status: string): string {
   return "";
 }
 
+type GeneratedFile = {
+  id: string;
+  fileName: string;
+  number: string;
+  exceedsPage: boolean;
+};
+
 function tone(status: string): string {
   if (status === "AI") return "field-ai";
   if (status === "PENDING" || status === "REVIEW") return "field-pending";
@@ -55,7 +62,30 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
   const [shared, setShared] = useState(initial.shared);
   const [splitSalon, setSplitSalon] = useState("");
   const [splitLines, setSplitLines] = useState<string[]>([]);
+  const [numbers, setNumbers] = useState<string[]>([]);
+  const [acknowledge, setAcknowledge] = useState(false);
+  const [files, setFiles] = useState<GeneratedFile[]>([]);
   const selected = review.beos.find((beo) => beo.id === selectedId) ?? review.beos[0];
+
+  useEffect(() => {
+    if (review.pendingCount > 0) {
+      return;
+    }
+    let cancelled = false;
+    void fetch(`/api/events/${review.eventId}/documents`)
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as { suggested: string[]; files: GeneratedFile[] };
+      })
+      .then((data) => {
+        if (!data || cancelled) return;
+        setFiles(data.files);
+        setNumbers((current) => (current.length === data.suggested.length ? current : data.suggested));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [review.eventId, review.pendingCount, review.beos.length]);
 
   async function send(body: Record<string, unknown>, notice?: string) {
     setError(null);
@@ -64,12 +94,21 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = (await response.json()) as EventReview & { message?: string; started?: boolean; documents?: number };
+    const data = (await response.json()) as EventReview & {
+      message?: string;
+      started?: boolean;
+      files?: GeneratedFile[];
+    };
     if (!response.ok) {
+      if (response.status === 409 && (data.message ?? "").includes("ya fue usado")) {
+        setAcknowledge(true);
+      }
       setError(data.message ?? "No se pudo guardar.");
       return;
     }
     if (data.started) {
+      setFiles(data.files ?? []);
+      setAcknowledge(false);
       setMessage(notice ?? "Se inició la generación de los documentos del evento.");
       return;
     }
@@ -99,11 +138,33 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
           <p data-testid="pendientes-evento">
             {review.pendingCount === 0 ? "Sin pendientes" : `Faltan ${review.pendingCount}`}
           </p>
+          {review.pendingCount === 0 ? (
+            <div className="form-inline" data-testid="numeros-beo">
+              {review.beos.map((beo, index) => (
+                <label key={beo.id}>
+                  {`Número ${index + 1}`}
+                  <input
+                    aria-label={`Número ${index + 1}`}
+                    value={numbers[index] ?? ""}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setAcknowledge(false);
+                      setNumbers((current) => {
+                        const next = review.beos.map((_, itemIndex) => current[itemIndex] ?? "");
+                        next[index] = value;
+                        return next;
+                      });
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+          ) : null}
           <button
             type="button"
             data-testid="confirmar-generar"
             disabled={review.pendingCount > 0}
-            onClick={() => void send({ action: "generate" })}
+            onClick={() => void send({ action: "generate", numbers, acknowledge })}
           >
             Confirmar y generar
           </button>
@@ -111,6 +172,18 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
       </header>
       {error ? <p className="alert">{error}</p> : null}
       {message ? <p className="notice" data-testid="generacion">{message}</p> : null}
+      {files.length > 0 ? (
+        <section data-testid="descargas">
+          {files.map((file) => (
+            <p key={file.id}>
+              <a href={`/api/events/${review.eventId}/documents/${file.id}?format=docx`}>{file.fileName}</a>{" "}
+              <a href={`/api/events/${review.eventId}/documents/${file.id}?format=pdf`}>PDF</a>
+              {file.exceedsPage ? " Excede una página" : ""}
+            </p>
+          ))}
+          <a href={`/api/events/${review.eventId}/documents/archive`}>Descargar todo</a>
+        </section>
+      ) : null}
 
       <section className="review-shared" data-testid="datos-compartidos">
         <h2>Datos del evento</h2>
