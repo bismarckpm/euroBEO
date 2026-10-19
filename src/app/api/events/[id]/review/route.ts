@@ -2,12 +2,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   addBeoLine,
+  confirmMemoField,
   deleteBeoLine,
+  editMemoField,
   getEventReview,
   mergeBeos,
+  regenerateMemo,
   ReviewError,
   splitBeo,
   startGeneration,
+  addMemoToEvent,
   updateBeoField,
   updateBeoLine,
   updateSharedField,
@@ -68,6 +72,25 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("generate"),
     numbers: z.array(z.string()).optional(),
     acknowledge: z.boolean().optional(),
+  }),
+  z.object({
+    action: z.literal("add-memo"),
+    memoTypeId: z.string().min(1),
+  }),
+  z.object({
+    action: z.literal("update-memo-field"),
+    memoId: z.string().min(1),
+    key: z.string().min(1),
+    value: z.string(),
+  }),
+  z.object({
+    action: z.literal("validate-memo-field"),
+    memoId: z.string().min(1),
+    key: z.string().min(1),
+  }),
+  z.object({
+    action: z.literal("regenerate-memo"),
+    memoId: z.string().min(1),
   }),
 ]);
 
@@ -134,5 +157,13 @@ async function applyAction(eventId: string, body: z.infer<typeof bodySchema>) {
       return splitBeo({ eventId, beoId: body.beoId, salon: body.salon, lineIds: body.lineIds });
     case "generate":
       return startGeneration(eventId, { numbers: body.numbers, acknowledge: body.acknowledge });
+    case "add-memo":
+      return addMemoToEvent(eventId, body.memoTypeId);
+    case "update-memo-field":
+      return editMemoField(eventId, body.memoId, body.key, body.value);
+    case "validate-memo-field":
+      return confirmMemoField(eventId, body.memoId, body.key);
+    case "regenerate-memo":
+      return regenerateMemo(eventId, body.memoId);
   }
 }

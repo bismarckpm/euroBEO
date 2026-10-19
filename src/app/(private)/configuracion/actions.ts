@@ -319,5 +319,6 @@ function memoFrom(formData: FormData) {
     body: text(formData, "body"),
     keywords: text(formData, "keywords"),
     templateFile: text(formData, "templateFile"),
+    excludeSetupDays: formData.get("excludeSetupDays") === "on",
   };
 }

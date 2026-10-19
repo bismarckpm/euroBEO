@@ -80,6 +80,7 @@ export const seedMemoType = {
   body: "Por medio de la presente se le informa que los días {dias} se llevará a cabo el evento {evento} en el salón {salones} para el cual fue solicitada tarifa plana.\n\nLos tickets serán sellados por el cliente y pagados por cada participante.\n\nLos tickets del estacionamiento que entran dentro de la tarifa especial son los del estacionamiento (sótano). Esto no incluye el servicio de Valet Parking.\n\nDe antemano gracias por su colaboración Atentamente,",
   keywords: ["tarifa plana de estacionamiento"],
   templateFile: "templates/memo-estacionamiento.docx",
+  excludeSetupDays: true,
 };
 
 export const seedSequence = {

@@ -86,6 +86,7 @@ export async function saveBudget(input: {
         itemsSumCents: input.budget.reconciliation.actual,
         differenceCents: input.budget.reconciliation.difference,
         warnings: input.budget.warnings,
+        triggers: input.budget.triggers,
         structureErrors: input.budget.structureErrors as Prisma.InputJsonValue,
         benefits: {
           create: input.budget.benefits.map((text, position) => ({ position, text })),

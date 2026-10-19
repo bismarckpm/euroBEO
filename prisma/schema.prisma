@@ -87,10 +87,12 @@ model MemoType {
   company      String
   reference    String
   body         String
-  keywords     String[]
-  templateFile String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  keywords         String[]
+  templateFile     String
+  excludeSetupDays Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  memos            Memo[]
 }
 
 /// Último correlativo emitido. `key` identifica la serie (B.E.O.).
@@ -111,6 +113,7 @@ model Event {
   updatedAt DateTime @updatedAt
   budgets   Budget[]
   beos      Beo[]
+  memos     Memo[]
   documents GeneratedDocument[]
 
   @@index([locator, company])
@@ -130,6 +133,7 @@ model Budget {
   itemsSumCents   Int
   differenceCents Int?
   warnings        String[]
+  triggers        String[] @default([])
   structureErrors Json
   createdAt       DateTime        @default(now())
   days            BudgetDay[]
@@ -242,6 +246,41 @@ model Beo {
   @@index([eventId])
 }
 
+/// Memorándum del evento. El número lo escribe la asistente; la versión sube al regenerar.
+model Memo {
+  id         String      @id @default(cuid())
+  eventId    String
+  event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  memoTypeId String
+  memoType   MemoType    @relation(fields: [memoTypeId], references: [id], onDelete: Restrict)
+  number     String?
+  status     String
+  version    Int         @default(1)
+  stale      Boolean     @default(false)
+  manual     Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  fields     MemoField[]
+  documents  GeneratedDocument[]
+
+  @@unique([eventId, memoTypeId])
+  @@index([eventId])
+}
+
+/// Campo trazable del memorándum: valor, estado y origen.
+model MemoField {
+  id     String  @id @default(cuid())
+  memoId String
+  memo   Memo    @relation(fields: [memoId], references: [id], onDelete: Cascade)
+  key    String
+  value  String?
+  status String
+  source String
+
+  @@unique([memoId, key])
+  @@index([memoId])
+}
+
 /// Campo trazable de la propuesta: valor, estado y origen.
 model BeoField {
   id     String  @id @default(cuid())
@@ -305,6 +344,8 @@ model GeneratedDocument {
   event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   beoId       String?
   beo         Beo?     @relation(fields: [beoId], references: [id], onDelete: SetNull)
+  memoId      String?
+  memo        Memo?    @relation(fields: [memoId], references: [id], onDelete: SetNull)
   kind        String
   version     Int
   number      String

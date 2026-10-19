@@ -1,15 +1,20 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { PDFDocument } from "pdf-lib";
+import PizZip from "pizzip";
 import { afterAll, describe, expect, it } from "vitest";
 import { saveBudget } from "./budget-store";
+import { listMemos } from "./catalog-db";
 import { loadBudgetCatalog } from "./budget-catalog";
+import { eventDocumentZip } from "./beo-documents";
 import { getPrisma } from "./db";
 import {
+  addMemoToEvent,
   getEventReview,
   mergeBeos,
+  regenerateMemo,
   splitBeo,
   startGeneration,
   updateBeoField,
@@ -61,6 +66,43 @@ async function rheumatologyEvent(): Promise<string> {
   });
   createdBudgetIds.push(saved.id);
   return saved.eventId;
+}
+
+async function eventFrom(match: string): Promise<string> {
+  const name = readdirSync(budgets).find(
+    (file) => file.toLowerCase().includes(match.toLowerCase()) && file.endsWith(".pdf") && !file.endsWith("_1.pdf"),
+  );
+  if (!name) {
+    throw new Error(`No está el presupuesto ${match}.`);
+  }
+  const pdf = new Uint8Array(readFileSync(path.join(budgets, name)));
+  const budget = await readBudgetPdf(pdf, await loadBudgetCatalog());
+  budget.client.company = `${match} ${randomUUID()}`;
+  budget.header.locator = randomUUID();
+  const saved = await saveBudget({
+    budget,
+    pdf,
+    fileName: name,
+    newVersion: true,
+    justification: budget.reconciliation.ok ? null : "Cuadre de prueba",
+  });
+  createdBudgetIds.push(saved.id);
+  return saved.eventId;
+}
+
+async function readyToGenerate(eventId: string, memoNumber: string): Promise<void> {
+  const prisma = getPrisma();
+  await prisma.beoField.updateMany({ where: { beo: { eventId } }, data: { status: "RULE" } });
+  await prisma.beoLine.updateMany({ where: { beo: { eventId } }, data: { status: "RULE" } });
+  await prisma.memoField.updateMany({
+    where: { memo: { eventId }, key: "numero" },
+    data: { value: memoNumber, status: "RULE", source: "memo.edit" },
+  });
+  await prisma.memo.updateMany({ where: { eventId }, data: { number: memoNumber } });
+  await prisma.memoField.updateMany({
+    where: { memo: { eventId }, status: { not: "RULE" } },
+    data: { status: "RULE" },
+  });
 }
 
 describe.skipIf(!ready)("revisión del evento", () => {
@@ -269,5 +311,80 @@ describe.skipIf(!ready)("revisión del evento", () => {
     if (learned) {
       await getPrisma().learnedNormalization.delete({ where: { id: learned.id } });
     }
+  });
+
+  it("propone el memo de Nena, lo incluye en el zip y avisa si cambia una B.E.O.", async () => {
+    const eventId = await eventFrom("Nena");
+    const review = await getEventReview(eventId);
+    expect(review.memos.map((memo) => memo.name)).toContain("Tarifa de estacionamiento");
+    const body = review.memos[0]?.fields.find((field) => field.key === "cuerpo")?.value ?? "";
+    const salons = [...new Set(review.beos.filter((beo) => beo.kind === "EVENTO").map((beo) => beo.salon))];
+    for (const salon of salons) {
+      expect(body).toContain(salon);
+    }
+
+    const prisma = getPrisma();
+    const before = await prisma.sequence.findUnique({ where: { key: "beo" } });
+    await readyToGenerate(eventId, "89");
+    const blank = await PDFDocument.create();
+    blank.addPage();
+    const pdf = Buffer.from(await blank.save());
+    const toPdf = async () => pdf;
+    try {
+      const started = await startGeneration(eventId, { toPdf });
+      expect(started.files.some((file) => file.kind === "memo" && file.fileName.startsWith("89 "))).toBe(true);
+      const zip = await eventDocumentZip(eventId);
+      const names = Object.keys(new PizZip(zip.bytes).files);
+      expect(names.some((name) => name.startsWith("89 "))).toBe(true);
+      expect(names.some((name) => name.startsWith("B.E.O."))).toBe(true);
+
+      const eventBeo = review.beos.find((beo) => beo.kind === "EVENTO");
+      if (!eventBeo) {
+        throw new Error("Nena no tiene una B.E.O. de evento.");
+      }
+      await updateBeoField({
+        eventId,
+        beoId: eventBeo.id,
+        key: "salonName",
+        value: "Salon Memo",
+        remember: false,
+      });
+      await startGeneration(eventId, { toPdf, acknowledge: true });
+      const stale = await getEventReview(eventId);
+      expect(stale.memos[0]?.stale).toBe(true);
+
+      const regenerated = await regenerateMemo(eventId, eventBeo && stale.memos[0] ? stale.memos[0].id : "", toPdf);
+      expect(regenerated.memos[0]?.stale).toBe(false);
+      const memoFile = regenerated.files.find((file) => file.kind === "memo" && file.number === "89");
+      const row = await prisma.generatedDocument.findFirst({ where: { id: memoFile?.id ?? "" } });
+      const xml = new PizZip(await readFile(row?.docxPath ?? "")).file("word/document.xml")?.asText() ?? "";
+      expect(xml.replace(/<[^>]+>/g, " ")).toContain("Salon Memo");
+      expect(row?.version).toBe(2);
+    } finally {
+      if (before) {
+        await prisma.sequence.update({
+          where: { key: "beo" },
+          data: { lastNumber: before.lastNumber, year: before.year },
+        });
+      }
+      await prisma.generatedDocument.deleteMany({ where: { eventId } });
+      await rm(path.join(process.cwd(), "data", "generated", eventId), { recursive: true, force: true });
+    }
+  });
+
+  it("agrega el memorándum a mano y también lo propone si el disparador está en las cláusulas", async () => {
+    const manualEvent = await eventFrom("Reumatología 22 al 24.10.2026 - Evento 3");
+    const before = await getEventReview(manualEvent);
+    expect(before.memos).toHaveLength(0);
+    const type = (await listMemos()).find((memo) => memo.name === "Tarifa de estacionamiento");
+    if (!type) {
+      throw new Error("No está el tipo de memorándum.");
+    }
+    const added = await addMemoToEvent(manualEvent, type.id);
+    expect(added.memos).toHaveLength(1);
+    expect(added.memos[0]?.fields.find((field) => field.key === "de")?.value).toBeTruthy();
+
+    const china = await getEventReview(await eventFrom("China"));
+    expect(china.memos.map((memo) => memo.name)).toContain("Tarifa de estacionamiento");
   });
 });

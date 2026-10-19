@@ -25,6 +25,8 @@ import { getEventReview, ReviewError, type ReviewBeo } from "./event-review";
 import { peekNextNumber } from "./sequence-number";
 import { BEO_SEQUENCE_KEY } from "./sequence-lock";
 import { activeBeoTemplate } from "./template-store";
+import { markMemosStale } from "./event-memos";
+import { writePendingMemos } from "./memo-documents";
 
 export type GeneratedFile = {
   id: string;
@@ -97,7 +99,7 @@ async function latestFiles(eventId: string): Promise<GeneratedFile[]> {
   const seen = new Set<string>();
   const files: GeneratedFile[] = [];
   for (const row of rows) {
-    const key = `${row.beoId ?? row.id}:${row.kind}`;
+    const key = row.memoId ? `memo:${row.memoId}` : `${row.beoId ?? row.id}:${row.kind}`;
     if (seen.has(key)) {
       continue;
     }
@@ -222,6 +224,9 @@ export async function generateEventDocuments(
   }
 
   const prisma = getPrisma();
+  const previousBeoDocs = await prisma.generatedDocument.count({
+    where: { eventId, beoId: { not: null } },
+  });
   const assigned = await prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<{ lastNumber: number; year: number }[]>`
       SELECT "lastNumber", "year"
@@ -316,6 +321,10 @@ export async function generateEventDocuments(
         });
       }
     }
+    if (previousBeoDocs > 0) {
+      await markMemosStale(eventId);
+    }
+    files.push(...(await writePendingMemos(eventId, review.title, toPdf)));
   } catch (error) {
     await Promise.all(written.map((file) => rm(file, { force: true })));
     if (error instanceof PdfConversionError) {

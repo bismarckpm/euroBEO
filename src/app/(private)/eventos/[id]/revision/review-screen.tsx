@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { EventReview, ReviewBeo, ReviewField, ReviewLine } from "@/lib/event-review";
+import type { EventReview, ReviewBeo, ReviewField, ReviewLine, ReviewMemo } from "@/lib/event-review";
 import { formatAmount } from "@/lib/format";
 
 const FIELD_LABELS: Record<string, string> = {
@@ -20,6 +20,14 @@ const FIELD_LABELS: Record<string, string> = {
   setup: "Montaje",
   specialInstructions: "Instrucciones especiales",
   servicePreparation: "Preparación del servicio",
+  numero: "Número del memorándum",
+  fecha: "Fecha",
+  para: "Para",
+  empresa: "Empresa",
+  de: "De",
+  cargo: "Cargo",
+  referencia: "Referencia",
+  cuerpo: "Cuerpo",
 };
 
 const HEADER_KEYS = ["weekday", "formattedDate", "schedule", "eventType", "salonName"];
@@ -57,6 +65,7 @@ function tone(status: string): string {
 export function ReviewScreen({ initial }: { initial: EventReview }) {
   const [review, setReview] = useState(initial);
   const [selectedId, setSelectedId] = useState(initial.beos[0]?.id ?? "");
+  const [selectedMemoId, setSelectedMemoId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [shared, setShared] = useState(initial.shared);
@@ -66,6 +75,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
   const [acknowledge, setAcknowledge] = useState(false);
   const [files, setFiles] = useState<GeneratedFile[]>([]);
   const selected = review.beos.find((beo) => beo.id === selectedId) ?? review.beos[0];
+  const selectedMemo = review.memos.find((memo) => memo.id === selectedMemoId) ?? null;
 
   useEffect(() => {
     if (review.pendingCount > 0) {
@@ -110,12 +120,24 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
       setFiles(data.files ?? []);
       setAcknowledge(false);
       setMessage(notice ?? "Se inició la generación de los documentos del evento.");
+      const refreshed = await fetch(`/api/events/${review.eventId}/review`);
+      if (refreshed.ok) {
+        const next = (await refreshed.json()) as EventReview;
+        setReview(next);
+        setShared(next.shared);
+      }
       return;
+    }
+    if (data.files) {
+      setFiles(data.files);
     }
     setReview(data);
     setShared(data.shared);
     if (!data.beos.some((beo) => beo.id === selectedId)) {
       setSelectedId(data.beos[0]?.id ?? "");
+    }
+    if (selectedMemoId && !data.memos.some((memo) => memo.id === selectedMemoId)) {
+      setSelectedMemoId(null);
     }
     setMessage(notice ?? null);
   }
@@ -213,7 +235,10 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
               type="button"
               data-testid="beo-nav"
               aria-current={beo.id === selected?.id ? "page" : undefined}
-              onClick={() => setSelectedId(beo.id)}
+              onClick={() => {
+                setSelectedMemoId(null);
+                setSelectedId(beo.id);
+              }}
             >
               <span>
                 {beo.date.slice(8)}.{beo.date.slice(5, 7)}.{beo.date.slice(0, 4)} · {beo.salon}
@@ -226,13 +251,36 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
           <h2>Memorándums</h2>
           {review.memos.length === 0 ? <p>Ninguno</p> : null}
           {review.memos.map((memo) => (
-            <p key={memo.id} data-testid="memo-nav">
-              {memo.name} · {memo.pendingCount}
-            </p>
+            <button
+              key={memo.id}
+              type="button"
+              data-testid="memo-nav"
+              aria-current={memo.id === selectedMemo?.id ? "page" : undefined}
+              onClick={() => setSelectedMemoId(memo.id)}
+            >
+              <span>
+                {memo.name}
+                {memo.stale ? " · desactualizado" : ""}
+              </span>
+              <small>{memo.pendingCount}</small>
+            </button>
           ))}
+          <AddMemo
+            types={review.memoTypes.filter((type) => !review.memos.some((memo) => memo.memoTypeId === type.id))}
+            onAdd={(memoTypeId) => void send({ action: "add-memo", memoTypeId }, "Memorándum agregado.")}
+          />
         </nav>
 
-        {selected ? (
+        {selectedMemo ? (
+          <MemoView
+            memo={selectedMemo}
+            onField={(key, value) => void send({ action: "update-memo-field", memoId: selectedMemo.id, key, value })}
+            onValidate={(key) => void send({ action: "validate-memo-field", memoId: selectedMemo.id, key })}
+            onRegenerate={() =>
+              void send({ action: "regenerate-memo", memoId: selectedMemo.id }, "Se regeneró el memorándum.")
+            }
+          />
+        ) : selected ? (
           <BeoView
             beo={selected}
             others={review.beos.filter((beo) => beo.id !== selected.id && beo.date === selected.date)}
@@ -272,6 +320,96 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
         )}
       </div>
     </main>
+  );
+}
+
+function AddMemo({
+  types,
+  onAdd,
+}: {
+  types: { id: string; name: string }[];
+  onAdd: (memoTypeId: string) => void;
+}) {
+  const [memoTypeId, setMemoTypeId] = useState(types[0]?.id ?? "");
+  if (types.length === 0) {
+    return null;
+  }
+  return (
+    <div className="form-inline">
+      <label>
+        Tipo
+        <select aria-label="Tipo de memorándum" value={memoTypeId} onChange={(event) => setMemoTypeId(event.target.value)}>
+          {types.map((type) => (
+            <option key={type.id} value={type.id}>
+              {type.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button type="button" data-testid="agregar-memo" onClick={() => onAdd(memoTypeId)}>
+        Agregar memorándum
+      </button>
+    </div>
+  );
+}
+
+function MemoView({
+  memo,
+  onField,
+  onValidate,
+  onRegenerate,
+}: {
+  memo: ReviewMemo;
+  onField: (key: string, value: string) => void;
+  onValidate: (key: string) => void;
+  onRegenerate: () => void;
+}) {
+  return (
+    <article className="beo-sheet">
+      <h2>{memo.name}</h2>
+      <p data-testid="pendientes-memo">{memo.pendingCount} pendientes</p>
+      {memo.stale ? (
+        <p className="alert" data-testid="memo-desactualizado">
+          El memorándum puede estar desactualizado.
+          <button type="button" data-testid="regenerar-memo" onClick={onRegenerate}>
+            Regenerar memorándum
+          </button>
+        </p>
+      ) : null}
+      {memo.fields.map((field) => {
+        const open = field.status !== "RULE";
+        const mark = badge(field.status);
+        const label = FIELD_LABELS[field.key] ?? field.key;
+        return (
+          <label key={field.id} className={`review-field ${tone(field.status)}`} data-testid={open ? "campo-abierto" : "campo"}>
+            <span>
+              {label}
+              {mark ? <em className="badge">{mark}</em> : null}
+            </span>
+            {field.key === "cuerpo" ? (
+              <textarea
+                aria-label={label}
+                defaultValue={field.value ?? ""}
+                key={`${field.id}-${field.value}-${field.status}`}
+                onBlur={(event) => onField(field.key, event.target.value)}
+              />
+            ) : (
+              <input
+                aria-label={label}
+                defaultValue={field.value ?? ""}
+                key={`${field.id}-${field.value}-${field.status}`}
+                onBlur={(event) => onField(field.key, event.target.value)}
+              />
+            )}
+            {field.status === "AI" || field.status === "REVIEW" ? (
+              <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => onValidate(field.key)}>
+                Validar
+              </button>
+            ) : null}
+          </label>
+        );
+      })}
+    </article>
   );
 }
 

@@ -391,6 +391,7 @@ function MemoFields({
     body: string;
     keywords: string[];
     templateFile: string;
+    excludeSetupDays?: boolean;
   };
 }) {
   return (
@@ -423,6 +424,10 @@ function MemoFields({
       <label>
         Palabras clave, separadas por coma
         <input name="keywords" required defaultValue={memo?.keywords.join(", ") ?? ""} />
+      </label>
+      <label>
+        <input name="excludeSetupDays" type="checkbox" defaultChecked={memo?.excludeSetupDays ?? true} />
+        Omitir días que solo son de montaje o desmontaje
       </label>
       <label>
         Plantilla .docx

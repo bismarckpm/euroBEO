@@ -54,3 +54,5 @@ export function formatWeekday(date: Date): string {
   assertValidDate(date);
   return WEEKDAYS[date.getDay()] ?? "Domingo";
 }
+
+export { formatMemoDate, formatSpanishDayList } from "../core/memo/days";
