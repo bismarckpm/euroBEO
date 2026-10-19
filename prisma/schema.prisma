@@ -206,3 +206,29 @@ model BudgetBenefit {
 
   @@index([budgetId])
 }
+
+/// Texto libre ya confirmado por la asistente. La clave es la tarea más el texto normalizado.
+model LearnedNormalization {
+  id             String   @id @default(cuid())
+  task           String
+  normalizedText String
+  sourceText     String
+  result         Json
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([task, normalizedText])
+}
+
+/// Llamada a la IA con el fragmento ya enmascarado y el resultado de la validación.
+model AiCallLog {
+  id        String   @id @default(cuid())
+  task      String
+  fragment  String
+  response  Json?
+  valid     Boolean
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

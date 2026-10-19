@@ -4,6 +4,7 @@ import { loadBudgetCatalog } from "@/lib/budget-catalog";
 import { readBudgetPdf } from "@/lib/budget-ingest";
 import { BudgetReadError } from "@/lib/pdf-text";
 import { DuplicateBudgetError, saveBudget } from "@/lib/budget-store";
+import { normalizeStoredBudget } from "@/lib/normalization";
 
 function isPdf(file: File, bytes: Uint8Array): boolean {
   const name = file.name.toLowerCase();
@@ -29,7 +30,9 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   try {
-    const budget = await readBudgetPdf(bytes, await loadBudgetCatalog());
+    const budget = await normalizeStoredBudget(
+      await readBudgetPdf(bytes, await loadBudgetCatalog()),
+    );
     const view = toUploadView(budget);
     if (budget.structureErrors.length > 0) {
       return NextResponse.json(

@@ -21,8 +21,23 @@ import {
 } from "@/lib/catalog-db";
 import { CatalogValidationError } from "@/lib/catalog-mutations";
 import { getCurrentUser } from "@/lib/current-user";
+import {
+  deactivateLearnedNormalization,
+  NormalizationInputError,
+  probeSalonText,
+  saveLearnedNormalization,
+  updateLearnedNormalization,
+} from "@/lib/normalization";
 
-const tabs = new Set(["salones", "secciones", "items", "textos", "memorandums", "correlativo"]);
+const tabs = new Set([
+  "salones",
+  "secciones",
+  "items",
+  "textos",
+  "memorandums",
+  "correlativo",
+  "aprendidas",
+]);
 
 async function requireSession(): Promise<void> {
   const user = await getCurrentUser();
@@ -213,6 +228,68 @@ export async function changeSequence(formData: FormData): Promise<void> {
     fail("correlativo", error);
   }
   redirect("/configuracion?tab=correlativo&guardado=1");
+}
+
+function learnedError(error: unknown): never {
+  if (error instanceof NormalizationInputError) {
+    redirect(`/configuracion?tab=aprendidas&error=${encodeURIComponent(error.message)}`);
+  }
+  throw error;
+}
+
+export async function addLearned(formData: FormData): Promise<void> {
+  await requireSession();
+  const task = text(formData, "task");
+  const result =
+    task === "item_section"
+      ? text(formData, "section")
+      : task === "trigger_clause"
+        ? text(formData, "memo")
+        : text(formData, "salon");
+  try {
+    await saveLearnedNormalization({ task, sourceText: text(formData, "sourceText"), result });
+  } catch (error) {
+    learnedError(error);
+  }
+  redirect("/configuracion?tab=aprendidas&guardado=1");
+}
+
+export async function changeLearned(formData: FormData): Promise<void> {
+  await requireSession();
+  try {
+    await updateLearnedNormalization(text(formData, "id"), text(formData, "result"));
+  } catch (error) {
+    learnedError(error);
+  }
+  redirect("/configuracion?tab=aprendidas&guardado=1");
+}
+
+export async function disableLearned(formData: FormData): Promise<void> {
+  await requireSession();
+  try {
+    await deactivateLearnedNormalization(text(formData, "id"));
+  } catch (error) {
+    learnedError(error);
+  }
+  redirect("/configuracion?tab=aprendidas&guardado=1");
+}
+
+export async function processSample(formData: FormData): Promise<void> {
+  await requireSession();
+  const sample = text(formData, "sample").trim();
+  if (!sample) {
+    redirect(
+      `/configuracion?tab=aprendidas&error=${encodeURIComponent("Escribe el texto a procesar.")}`,
+    );
+  }
+  const result = await probeSalonText(sample);
+  const params = new URLSearchParams({
+    tab: "aprendidas",
+    salon: result.salon ?? "",
+    estado: result.status,
+    llamadas: String(result.calls),
+  });
+  redirect(`/configuracion?${params.toString()}`);
 }
 
 function memoFrom(formData: FormData) {

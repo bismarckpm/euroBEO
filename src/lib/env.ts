@@ -15,20 +15,19 @@ const envSchema = z.object({
     ),
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET debe tener al menos 32 caracteres"),
   OPENAI_API_KEY: optionalText,
-  GOOGLE_SERVICE_ACCOUNT_JSON: optionalText.refine(
-    (value) => {
-      if (value === undefined) {
-        return true;
-      }
-      try {
-        const parsed: unknown = JSON.parse(value);
-        return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
-      } catch {
-        return false;
-      }
-    },
-    "GOOGLE_SERVICE_ACCOUNT_JSON debe ser un JSON de cuenta de servicio",
-  ),
+  OPENAI_MODEL: z.string().trim().min(1).default("gpt-4.1-mini"),
+  OPENAI_TIMEOUT_MS: z.coerce.number().int().positive().max(120_000).default(20_000),
+  GOOGLE_SERVICE_ACCOUNT_JSON: optionalText.refine((value) => {
+    if (value === undefined) {
+      return true;
+    }
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
+    } catch {
+      return false;
+    }
+  }, "GOOGLE_SERVICE_ACCOUNT_JSON debe ser un JSON de cuenta de servicio"),
   GOOGLE_DRIVE_FOLDER_ID: optionalText,
   PORT: z.coerce.number().int().positive().default(3000),
 });
@@ -62,6 +61,8 @@ export function parseEnv(source: EnvSource): AppEnv {
     DATABASE_URL: source.DATABASE_URL,
     SESSION_SECRET: source.SESSION_SECRET,
     OPENAI_API_KEY: blankToUndefined(source.OPENAI_API_KEY),
+    OPENAI_MODEL: blankToUndefined(source.OPENAI_MODEL) ?? "gpt-4.1-mini",
+    OPENAI_TIMEOUT_MS: blankToUndefined(source.OPENAI_TIMEOUT_MS) ?? "20000",
     GOOGLE_SERVICE_ACCOUNT_JSON: blankToUndefined(source.GOOGLE_SERVICE_ACCOUNT_JSON),
     GOOGLE_DRIVE_FOLDER_ID: blankToUndefined(source.GOOGLE_DRIVE_FOLDER_ID),
     PORT: blankToUndefined(source.PORT),
@@ -75,12 +76,13 @@ export function parseEnv(source: EnvSource): AppEnv {
 }
 
 /** Carga el entorno al arrancar. Sin clave de OpenAI, la IA queda deshabilitada. */
-export function loadEnv(source: EnvSource = process.env, logger: Pick<Console, "warn"> = console): AppEnv {
+export function loadEnv(
+  source: EnvSource = process.env,
+  logger: Pick<Console, "warn"> = console,
+): AppEnv {
   const env = parseEnv(source);
   if (!env.OPENAI_API_KEY) {
-    logger.warn(
-      "OPENAI_API_KEY no está definida: la normalización con IA estará deshabilitada.",
-    );
+    logger.warn("OPENAI_API_KEY no está definida: la normalización con IA estará deshabilitada.");
   }
   return env;
 }

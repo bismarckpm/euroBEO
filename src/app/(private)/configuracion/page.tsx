@@ -8,6 +8,8 @@ import {
   readSequence,
   resolveSalon,
 } from "@/lib/catalog-db";
+import { listAiCallLogs, listLearnedNormalizations } from "@/lib/normalization";
+import { LearnedPanel } from "./learned";
 import {
   addAlias,
   addItem,
@@ -34,6 +36,7 @@ const TABS = [
   ["textos", "Textos"],
   ["memorandums", "Memorándums"],
   ["correlativo", "Correlativo"],
+  ["aprendidas", "Aprendidas"],
 ] as const;
 
 type Tab = (typeof TABS)[number][0];
@@ -57,17 +60,27 @@ function SectionSelect({ name, defaultValue }: { name: string; defaultValue?: st
 export default async function ConfigurationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; error?: string; guardado?: string; prueba?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    error?: string;
+    guardado?: string;
+    prueba?: string;
+    salon?: string;
+    estado?: string;
+    llamadas?: string;
+  }>;
 }) {
   const params = await searchParams;
   const tab = activeTab(params.tab);
-  const [salons, mappings, items, texts, memos, sequence] = await Promise.all([
+  const [salons, mappings, items, texts, memos, sequence, learned, logs] = await Promise.all([
     listSalons(),
     listMappings(),
     listItems(),
     listFixedTexts(),
     listMemos(),
     readSequence(),
+    listLearnedNormalizations(),
+    listAiCallLogs(),
   ]);
   const probe = params.prueba?.trim() ? await resolveSalon(params.prueba) : null;
 
@@ -276,8 +289,8 @@ export default async function ConfigurationPage({
       {tab === "textos" ? (
         <form action={changeTexts} className="stack">
           <p className="lede">
-            Estos textos se usan al proponer cada B.E.O. Si alguno dice Pendiente, reemplázalo por el
-            texto vigente del hotel.
+            Estos textos se usan al proponer cada B.E.O. Si alguno dice Pendiente, reemplázalo por
+            el texto vigente del hotel.
           </p>
           {texts.map((text) => (
             <label key={text.key}>
@@ -328,6 +341,20 @@ export default async function ConfigurationPage({
           </label>
           <button type="submit">Guardar correlativo</button>
         </form>
+      ) : null}
+
+      {tab === "aprendidas" ? (
+        <LearnedPanel
+          salons={salons}
+          memos={memos}
+          rows={learned}
+          logs={logs}
+          probe={
+            params.estado
+              ? { salon: params.salon ?? "", status: params.estado, calls: params.llamadas ?? "0" }
+              : null
+          }
+        />
       ) : null}
     </main>
   );
