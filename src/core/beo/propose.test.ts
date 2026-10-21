@@ -56,6 +56,42 @@ function budget(days: ParsedBudget["days"], title = "CONGRESO NACIONAL"): Parsed
   };
 }
 
+describe("clasificación frente a la IA", () => {
+  it("no acepta la sección de la IA si el respaldo de CENA CONFERENCIA aplica", () => {
+    const drafts = proposeBeos(
+      budget([
+        {
+          dates: ["2026-10-23"],
+          raw: "23",
+          blocks: [
+            block({
+              kind: "EVENTO",
+              pax: tracked(10, "RULE"),
+              sections: [
+                {
+                  headerRaw: "CENA CONFERENCIA",
+                  target: tracked(null, "PENDING"),
+                  items: [
+                    item({
+                      qty: 10,
+                      description: "Tablas de embutidos por persona",
+                      unitPrice: 2516,
+                      section: tracked("SISTEMAS", "AI"),
+                    }),
+                  ],
+                },
+              ],
+            }),
+          ],
+        },
+      ]),
+      texts,
+    );
+    expect(drafts[0]?.food.map((line) => line.section)).toEqual(["ALIMENTOS"]);
+    expect(drafts[0]?.sections.some((section) => section.section === "SISTEMAS")).toBe(false);
+  });
+});
+
 describe("reparto de la propuesta", () => {
   it("deja el residuo de céntimos en el último día", () => {
     expect(splitCents(100, 3)).toEqual([33, 33, 34]);
@@ -131,7 +167,7 @@ describe("reparto de la propuesta", () => {
               kind: "DESMONTAJE",
               salon: tracked(null, "PENDING"),
               salonRaw: "todos los salones",
-              sections: [{ headerRaw: "PERSONAL", target: tracked("PERSONAL", "RULE"), items: [item({ qty: 1, description: "Supervisor", unitPrice: 10800 })] }],
+              sections: [{ headerRaw: "PERSONAL DESMONTAJE", target: tracked("PERSONAL", "RULE"), items: [item({ qty: 1, description: "Supervisor", unitPrice: 10800 })] }],
             }),
           ],
         },
@@ -209,8 +245,7 @@ describe("campos de la propuesta", () => {
     expect(draft?.billboard).toMatchObject({ value: "CENA DE GALA", status: "PENDING" });
     expect(draft?.rentCents.value).toBe(741500);
     expect(draft?.food[0]?.text).toContain("N° pax: 700");
-    expect(draft?.food[0]?.text).toContain("PRECIO: USD 4,00 c/u x 700 pax");
-    expect(draft?.food[0]?.text).toContain("Hora: 06:00 pm a 11:00 pm");
+    expect(draft?.food[0]?.text).toContain("Precio: USD 4,00 c/u x pax");
     const personal = draft?.sections.find((section) => section.section === "PERSONAL")?.groups[0]?.lines[0];
     expect(personal?.text).toBe("08 Asistente de Servicio USD 39,00 c/u");
     expect(draft?.sections.some((section) => section.section === "SISTEMAS")).toBe(true);

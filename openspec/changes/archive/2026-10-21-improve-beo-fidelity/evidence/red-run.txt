@@ -1,0 +1,130 @@
+﻿commit: fed3b562551392f06207da5bfd1cb3d5ed460955
+worktree: C:\Aplicaciones\Personal\EuroBuilding\euroBEO-red
+command: npx vitest run src/core/documents/golden.test.ts
+node.exe : npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm 
+help npmrc` for supported config options.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (npm warn Unknow...config options.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+ RUN  v5.0.5 C:/Aplicaciones/Personal/EuroBuilding/euroBEO-red
+
+ × src/core/documents/golden.test.ts > caso dorado cata-eleaexeltis > coincide con los datos de la B.E.O. 0.955/26 194ms
+   → evento: "CATA DE VINO" ≠ "LABORATORIOS ELEAEXELTIS"
+direccion: "" ≠ "—"
+contacto: "Diana Bruno" ≠ "DIANA BRUNO"
+compania: "" ≠ "LABORATORIOS ELEAEXELTIS"
+dia: "Viernes" ≠ "VIERNES"
+fecha: "23.10.2026" ≠ "23/10/26"
+horario: "07:00 p.m. a 10:00 p.m." ≠ "07:00 P.M a 10:00 P.M"
+eventoTipo: "Montaje" ≠ "CATA"
+renta: "" ≠ "—"
+alimentos: [] ≠ undefined
+bebidas: [{"texto":"150 Agua Mineral USD 1,84 c/u"}] ≠ undefined
+descorche: [{"texto":"36 Descorche de Vino o Espumante USD 15,00 c/u"}] ≠ undefined
+sistemas: [] ≠ undefined
+electricidad: [] ≠ undefined
+accesos: [] ≠ undefined
+mobiliario: [] ≠ undefined
+pendiente: [{"texto":"150 Tablas de embutidos por persona Jamón Serrano, Salchichón Nápole, Chorizo Español, Queso Tentación, Queso Manchego, Queso de Cabra Aceitunas Verdes, aceitunas negras, casabitos, grisinis, nueces. Se calculan 3 por mesa. Cata Queso Manchego (1 porción individual cata) Jamón Serrano (1 porción individual cata) USD 25,16 c/u"},{"texto":"150 Pasapalos 1p/p Shot de tequeño picamiel USD 2,00 c/u"}] ≠ undefined
+personalMontaje: [{"texto":"01 Supervisor USD 58,50 c/u"},{"texto":"02 Limpiador / Acomodador USD 32,50 c/u"},{"texto":"01 Asistente de servicio USD 32,50 c/u"},{"texto":"01 Supervisor USD 58,50 c/u"},{"texto":"01 Limpiador / Acomodador USD 32,50 c/u"},{"texto":"10 Asistente de Servicio USD 39,00 c/u"},{"texto":"01 Cocineros USD 32,50 c/u"}] ≠ undefined
+personalEvento: [] ≠ undefined
+personalDesmontaje: [] ≠ undefined: expected [ …(24) ] to deeply equal []
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/core/documents/golden.test.ts > caso dorado cata-eleaexeltis > coincide con los datos de la B.E.O. 0.955/26
+AssertionError: evento: "CATA DE VINO" ≠ "LABORATORIOS ELEAEXELTIS"
+direccion: "" ≠ "—"
+contacto: "Diana Bruno" ≠ "DIANA BRUNO"
+compania: "" ≠ "LABORATORIOS ELEAEXELTIS"
+dia: "Viernes" ≠ "VIERNES"
+fecha: "23.10.2026" ≠ "23/10/26"
+horario: "07:00 p.m. a 10:00 p.m." ≠ "07:00 P.M a 10:00 P.M"
+eventoTipo: "Montaje" ≠ "CATA"
+renta: "" ≠ "—"
+alimentos: [] ≠ undefined
+bebidas: [{"texto":"150 Agua Mineral USD 1,84 c/u"}] ≠ undefined
+descorche: [{"texto":"36 Descorche de Vino o Espumante USD 15,00 c/u"}] ≠ undefined
+sistemas: [] ≠ undefined
+electricidad: [] ≠ undefined
+accesos: [] ≠ undefined
+mobiliario: [] ≠ undefined
+pendiente: [{"texto":"150 Tablas de embutidos por persona Jamón Serrano, Salchichón Nápole, Chorizo Español, Queso 
+Tentación, Queso Manchego, Queso de Cabra Aceitunas Verdes, aceitunas negras, casabitos, grisinis, nueces. Se calculan 
+3 por mesa. Cata Queso Manchego (1 porción individual cata) Jamón Serrano (1 porción individual cata) USD 25,16
+c/u"},{"texto":"150 Pasapalos 1p/p Shot de tequeño picamiel USD 2,00c/u"}] ≠ undefined
+personalMontaje: [{"texto":"01 Supervisor USD 58,50c/u"},{"texto":"02 Limpiador / Acomodador USD 32,50
+c/u"},{"texto":"01 Asistente de servicio USD 32,50c/u"},{"texto":"01 Supervisor USD 58,50c/u"},{"texto":"01 Limpiador 
+/ Acomodador USD 32,50c/u"},{"texto":"10 Asistente de Servicio USD 39,00c/u"},{"texto":"01 Cocineros USD 32,50c/u"}] ≠ 
+undefined
+personalEvento: [] ≠ undefined
+personalDesmontaje: [] ≠ undefined: expected [ …(24) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "evento: \"CATA DE VINO\" ≠ \"LABORATORIOS ELEAEXELTIS\"",
++   "direccion: \"\" ≠ \"—\"",
++   "contacto: \"Diana Bruno\" ≠ \"DIANA BRUNO\"",
++   "compania: \"\" ≠ \"LABORATORIOS ELEAEXELTIS\"",
++   "dia: \"Viernes\" ≠ \"VIERNES\"",
++   "fecha: \"23.10.2026\" ≠ \"23/10/26\"",
++   "horario: \"07:00 p.m. a 10:00 p.m.\" ≠ \"07:00 P.M a 10:00 P.M\"",
++   "eventoTipo: \"Montaje\" ≠ \"CATA\"",
++   "renta: \"\" ≠ \"—\"",
++   "alimentos: [] ≠ undefined",
++   "bebidas: [{\"texto\":\"150 Agua Mineral USD 1,84 c/u\"}] ≠ undefined",
++   "descorche: [{\"texto\":\"36 Descorche de Vino o Espumante USD 15,00 c/u\"}] ≠ undefined",
++   "sistemas: [] ≠ undefined",
++   "electricidad: [] ≠ undefined",
++   "accesos: [] ≠ undefined",
++   "mobiliario: [] ≠ undefined",
++   "pendiente: [{\"texto\":\"150 Tablas de embutidos por persona Jamón Serrano, Salchichón Nápole, Chorizo Español, 
+Queso Tentación, Queso Manchego, Queso de Cabra Aceitunas Verdes, aceitunas negras, casabitos, grisinis, nueces. Se 
+calculan 3 por mesa. Cata Queso Manchego (1 porción individual cata) Jamón Serrano (1 porción individual cata) USD 
+25,16c/u\"},{\"texto\":\"150 Pasapalos 1p/p Shot de tequeño picamiel USD 2,00c/u\"}] ≠ undefined",
++   "personalMontaje: [{\"texto\":\"01 Supervisor USD 58,50c/u\"},{\"texto\":\"02 Limpiador / Acomodador USD 32,50
+c/u\"},{\"texto\":\"01 Asistente de servicio USD 32,50c/u\"},{\"texto\":\"01 Supervisor USD 58,50
+c/u\"},{\"texto\":\"01 Limpiador / Acomodador USD 32,50c/u\"},{\"texto\":\"10 Asistente de Servicio USD 39,00
+c/u\"},{\"texto\":\"01 Cocineros USD 32,50c/u\"}] ≠ undefined",
++   "personalEvento: [] ≠ undefined",
++   "personalDesmontaje: [] ≠ undefined",
++   "montaje: \"mesas redondas para 8 personas\" ≠ \"Mesas redondas para 8 personas\"",
++   "foodItems: undefined ≠ [{\"title\":\"Tablas de embutidos por persona\",\"lines\":[\"Jamón Serrano, Salchichón 
+Nápole, Chorizo Español,\",\"Queso Tentación, Queso Manchego, Queso de Cabra\"],\"includes\":\"Aceitunas Verdes, 
+aceitunas negras, casabitos, grisinis, nueces.\",\"note\":\"Se calculan 3 tablas por mesa - 19 
+mesas\",\"unitPrice\":\"25,16\",\"priceSuffix\":\"c/u x pax\"},{\"title\":\"Cata\",\"lines\":[\"Queso Manchego (1 
+porción individual cata)\",\"Jamón Serrano (1 porción individual 
+cata)\"],\"paxLabel\":\"150\",\"unitPrice\":\"3,00\",\"priceSuffix\":\"c/u x pax\"},{\"title\":\"Pasapalos 
+1p/p\",\"lines\":[\"Shot de tequeño picamiel\"],\"paxLabel\":\"150\",\"unitPrice\":\"2,00\",\"priceSuffix\":\"c/u x 
+pax\"}]",
++   "rightSections: undefined ≠ [{\"title\":\"BEBIDAS\",\"lines\":[\"150 Agua Mineral 330 ml USD 1,84 c/u\",\"36 
+Descorche de Vino o Espumante USD 15,00 c/u\"]}]",
++   "staff: undefined ≠ {\"setupLabel\":\"Montaje:\",\"setup\":[\"01 Supervisor USD 54,00 c/u\",\"02 Limpiador / 
+Acomodador USD 30,00 c/u\",\"01 Asistente de servicio USD 36,00 c/u\"],\"serviceLabel\":\"Servicio 
+Evento:\",\"service\":[\"01 Supervisor USD 54,00 c/u\",\"01 Limpiador / Acomodador USD 30,00 c/u\",\"10 Asistente de 
+Servicio USD 36,00 c/u\",\"01 Cocineros USD 36,00 c/u\"],\"teardownLabel\":\"Desmontaje:\",\"teardown\":[]}",
++ ]
+
+ ❯ src/core/documents/golden.test.ts:64:52
+     62|     const expected = JSON.parse(readFileSync(path.join(dir, "expected.…
+     63|     const fields = diffFields(actual, expected);
+     64|     expect(fields, fields.slice(0, 20).join("\n")).toEqual([]);
+       |                                                    ^
+     65|   });
+     66| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  10:34:48
+   Duration  585ms (tests 46%, import 44%, transform 9%, worker 1%)
+

@@ -64,6 +64,7 @@ const FIELD_LABELS: Record<string, string> = {
   email: "email",
   telefono: "phone",
   empresa: "company",
+  evento: "eventLabel",
   "persona contacto": "contact",
   telefonos: "phones",
   telf: "phones",
@@ -180,7 +181,16 @@ function isSectionLine(line: TextLine, columns: ColumnBounds, text: string): boo
 }
 
 function isAnchorLine(line: TextLine, columns: ColumnBounds): boolean {
-  return /^\d{1,4}$/.test(textInColumn(line, columns, "cantidad"));
+  if (/^\d{1,4}$/.test(textInColumn(line, columns, "cantidad"))) {
+    return true;
+  }
+  const quantity = line.fragments.some(
+    (fragment) => fragment.x < 120 && /^\d{1,4}$/.test(fragment.text.trim()),
+  );
+  if (!quantity) {
+    return false;
+  }
+  return Boolean(textInColumn(line, columns, "tarifa") || textInColumn(line, columns, "total"));
 }
 
 function hasBodyText(line: TextLine, columns: ColumnBounds): boolean {
@@ -445,6 +455,7 @@ function absorbFields(line: TextLine, budget: ParsedBudget): void {
     else if (target === "email") budget.header.email = value;
     else if (target === "phone") budget.header.phone = value;
     else if (target === "company") budget.client.company = value;
+    else if (target === "eventLabel" && !budget.client.company) budget.client.company = value;
     else if (target === "contact") budget.client.contact = value;
     else if (target === "phones") budget.client.phones = value;
     else if (target === "address") budget.client.address = value;
@@ -487,6 +498,39 @@ function cluster(lines: MarkedLine[], gap: number): MarkedLine[][] {
   return groups;
 }
 
+/**
+ * El texto se queda en el ítem de arriba, salvo que el ancla de abajo esté más cerca.
+ * Si el título del ítem siguiente queda en medio, hace falta una diferencia clara (8 px)
+ * para soltar la nota del ítem de arriba.
+ */
+function chooseAnchor(anchors: MarkedLine[], cluster: MarkedLine[], texts: MarkedLine[]): MarkedLine | null {
+  const page = cluster[0]?.page;
+  const y = cluster[Math.floor(cluster.length / 2)]?.y;
+  if (page === undefined || y === undefined) {
+    return null;
+  }
+  const above = anchors.filter((anchor) => anchor.y > y).sort((left, right) => left.y - right.y)[0];
+  const below = anchors.filter((anchor) => anchor.y <= y).sort((left, right) => right.y - left.y)[0];
+  if (!above) {
+    return below ?? null;
+  }
+  if (!below) {
+    return above;
+  }
+  const gapAbove = above.y - y;
+  const gapBelow = y - below.y;
+  const blocked = texts.some(
+    (line) => line.page === page && !cluster.includes(line) && line.y < y && line.y > below.y,
+  );
+  if (!blocked && gapBelow < gapAbove) {
+    return below;
+  }
+  if (gapBelow + 8 < gapAbove) {
+    return below;
+  }
+  return above;
+}
+
 function assignText(lines: MarkedLine[]): Map<MarkedLine, MarkedLine[]> {
   const assigned = new Map<MarkedLine, MarkedLine[]>();
   let bucket: MarkedLine[] = [];
@@ -498,12 +542,7 @@ function assignText(lines: MarkedLine[]): Map<MarkedLine, MarkedLine[]> {
       const median = group[Math.floor(group.length / 2)];
       const samePage = anchors.filter((line) => line.page === median.page);
       const pool = samePage.length > 0 ? samePage : anchors;
-      const anchor = pool.reduce<MarkedLine | null>((best, candidate) => {
-        if (!best) {
-          return candidate;
-        }
-        return Math.abs(candidate.y - median.y) < Math.abs(best.y - median.y) ? candidate : best;
-      }, null);
+      const anchor = chooseAnchor(pool, group, texts);
       if (!anchor) {
         continue;
       }

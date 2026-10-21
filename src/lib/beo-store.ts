@@ -4,7 +4,7 @@ import { currentFixedTexts } from "../core/config/fixed-texts";
 import { recordAudit } from "./audit";
 import { loadBudgetCatalog } from "./budget-catalog";
 import { readBudgetPdf } from "./budget-ingest";
-import { listFixedTexts } from "./catalog-db";
+import { getBeoSettings, listFixedTexts } from "./catalog-db";
 import { getPrisma } from "./db";
 import { normalizeStoredBudget } from "./normalization";
 
@@ -92,7 +92,7 @@ export async function createBeoProposal(eventId: string) {
   }
 
   const texts = currentFixedTexts(await listFixedTexts());
-  const drafts = proposeBeos(parsed, texts);
+  const drafts = proposeBeos(parsed, texts, await getBeoSettings());
   const saved = await prisma.$transaction(async (tx) => {
     await tx.beo.deleteMany({ where: { eventId, status: "draft" } });
     const rows = [];

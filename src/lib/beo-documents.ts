@@ -4,6 +4,8 @@ import path from "node:path";
 import type { Prisma } from "@prisma/client";
 import PizZip from "pizzip";
 import { formatCents } from "../core/beo/format";
+import type { BeoSettings } from "../core/beo/presentation";
+import { validatePrintable } from "../core/documents/validate-beo";
 import {
   beoDownloadName,
   eventZipName,
@@ -21,7 +23,7 @@ import { parseBeoNumber } from "../core/config/sequence";
 import { renderDocx } from "../core/documents/render-docx";
 import type { JsonValue } from "./audit";
 import { recordAudit } from "./audit";
-import { getFixedTexts } from "./catalog-db";
+import { getBeoSettings, getFixedTexts } from "./catalog-db";
 import { getPrisma } from "./db";
 import { getEventReview, ReviewError, type ReviewBeo } from "./event-review";
 import { peekNextNumber } from "./sequence-number";
@@ -78,7 +80,9 @@ function reviewSource(
   iniciales: string,
   preparedOn: string,
   number: string,
+  settings: BeoSettings,
 ): BeoPrintSource {
+  const guarantee = fieldValue(beo, "guarantee");
   return {
     eventTitle: title,
     company: fieldValue(beo, "company"),
@@ -90,7 +94,7 @@ function reviewSource(
     schedule: fieldValue(beo, "schedule"),
     eventType: fieldValue(beo, "eventType"),
     salonName: fieldValue(beo, "salonName"),
-    guarantee: fieldValue(beo, "guarantee"),
+    guarantee,
     rent: rentLabel(fieldValue(beo, "rentCents")),
     billboard: fieldValue(beo, "billboard"),
     setup: fieldValue(beo, "setup"),
@@ -99,10 +103,15 @@ function reviewSource(
     iniciales,
     preparedOn,
     number,
+    settings,
+    blockPax: /^\d+$/.test(guarantee) ? Number(guarantee) : null,
     lines: beo.lines.map((line) => ({
       section: line.section,
       groupName: line.groupName,
       text: line.text,
+      description: line.description,
+      qty: line.qty,
+      unitPriceCents: line.unitPriceCents,
     })),
   };
 }
@@ -253,6 +262,9 @@ export async function generateEventDocuments(
   if (review.pendingCount > 0) {
     throw new ReviewError(`Faltan ${review.pendingCount} campos.`, 409);
   }
+  if (review.issues.length > 0) {
+    throw new ReviewError(review.issues.map((issue) => issue.message).join(" "), 409);
+  }
   const overrides = options.numbers ?? [];
   for (const value of overrides) {
     if (value.trim() && !parseBeoNumber(value)) {
@@ -261,6 +273,7 @@ export async function generateEventDocuments(
   }
 
   const texts = await getFixedTexts();
+  const settings = await getBeoSettings();
   const preparedOn = formatPreparationDate(new Date());
   const template = await activeBeoTemplate();
   const templateBytes = await readFile(template.filePath);
@@ -274,8 +287,12 @@ export async function generateEventDocuments(
         continue;
       }
       const data = toTemplateData(
-        reviewSource(review.title, beo, texts.footerInitials, preparedOn, "0.000/00"),
+        reviewSource(review.title, beo, texts.footerInitials, preparedOn, "0.000/00", settings),
       );
+      const printable = validatePrintable(`${beo.salon} ${beo.date}`, data);
+      if (printable.length > 0) {
+        throw new ReviewError(printable.map((issue) => issue.message).join(" "), 409);
+      }
       const parts = await layoutBeo(data, { render, toPdf, pages: countPages });
       layouts.push({ beoId: beo.id, parts });
     }
@@ -497,6 +514,7 @@ export async function regenerateSelectedDocuments(
   }
 
   const texts = await getFixedTexts();
+  const settings = await getBeoSettings();
   const preparedOn = formatPreparationDate(new Date());
   const template = await activeBeoTemplate();
   const templateBytes = await readFile(template.filePath);
@@ -510,9 +528,13 @@ export async function regenerateSelectedDocuments(
 
   try {
     for (const beo of selected) {
+      const blocked = review.issues.filter((issue) => issue.beo === `${beo.salon} ${beo.date}`);
+      if (blocked.length > 0) {
+        throw new ReviewError(blocked.map((issue) => issue.message).join(" "), 409);
+      }
       const parts = await layoutBeo(
         toTemplateData(
-          reviewSource(review.title, beo, texts.footerInitials, preparedOn, "0.000/00"),
+          reviewSource(review.title, beo, texts.footerInitials, preparedOn, "0.000/00", settings),
         ),
         { render, toPdf, pages: countPages },
       );

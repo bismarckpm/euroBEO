@@ -95,13 +95,52 @@ describe("plantilla y nombre de la B.E.O.", () => {
     const sistemas = xml
       .split(/<w:p[ >]/)
       .find((paragraph) => paragraph.includes("SISTEMAS</w:t>"));
-    const group = xml.split(/<w:p[ >]/).find((paragraph) => paragraph.includes("Montaje</w:t>"));
+    const group = xml.split(/<w:p[ >]/).find((paragraph) => paragraph.includes("Montaje"));
     expect(sistemas).toBeTruthy();
     expect(sistemas).not.toContain("<w:numPr>");
     expect(group).not.toContain("<w:numPr>");
     expect(xml).toContain("300,00\u00A0c/u");
     expect(xml).not.toContain("DESCORCHE");
     expect(xml).not.toContain("ACCESOS");
+  });
+});
+
+describe("montos", () => {
+  it("imprime USD en la renta y en un precio que llegó sin moneda", () => {
+    const data = toTemplateData(
+      source({
+        rent: "2.925,00",
+        lines: [
+          {
+            section: "PERSONAL",
+            groupName: "Evento",
+            text: "01 Supervisor 54,00 c/u",
+          },
+          {
+            section: "BEBIDAS",
+            groupName: "",
+            text: "150 Agua Mineral USD 1,84 c/u",
+          },
+          {
+            section: "ALIMENTOS",
+            groupName: "",
+            text: "Cena",
+            description: "Cena de gala",
+            qty: 10,
+            unitPriceCents: 4000,
+          },
+        ],
+      }),
+    );
+    expect(data.renta).toBe("USD 2.925,00");
+    expect(data.staff.service[0]).toBe("01 Supervisor USD 54,00\u00A0c/u");
+    expect(data.rightSections[0]?.lines[0]).toContain("USD 1,84");
+    expect(data.rightSections[0]?.lines[0]).not.toContain("USD USD");
+    expect(data.foodItems[0]?.unitPrice).toBe("40,00");
+    const xml = xmlOf(renderDocx(template, data));
+    expect(xml).toContain("Precio: USD");
+    expect(xml).toContain("USD 2.925,00");
+    expect(toTemplateData(source({ rent: "" })).renta).toBe("—");
   });
 });
 

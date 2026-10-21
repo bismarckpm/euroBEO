@@ -78,6 +78,10 @@ export function textInColumn(line: TextLine, columns: ColumnBounds, name: Column
   return line.fragments
     .filter((fragment) => {
       const left = columnAt(columns, fragment.x);
+      // «Incluye:» cae en Cantidad, pero es texto de la descripción.
+      if (/\p{L}/u.test(fragment.text) && left === "cantidad") {
+        return name === "descripcion";
+      }
       const center = columnAt(columns, fragment.x + fragment.width / 2);
       if (fragment.width > 40 && center && left && center !== left) {
         return center === name;

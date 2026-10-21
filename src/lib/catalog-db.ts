@@ -1,3 +1,4 @@
+import { parseEventTypes, parsePresentation, type BeoSettings } from "../core/beo/presentation";
 import { currentFixedTexts, type FixedTexts } from "../core/config/fixed-texts";
 import {
   classifyCatalogItem,
@@ -109,6 +110,15 @@ export async function classifyItem(description: string, section: BeoSection): Pr
 export async function getFixedTexts(): Promise<FixedTexts> {
   const rows = await listFixedTexts();
   return currentFixedTexts(rows);
+}
+
+export async function getBeoSettings(): Promise<BeoSettings> {
+  const rows = await listFixedTexts();
+  const byKey = new Map(rows.map((row) => [row.key, row.body]));
+  return {
+    presentation: parsePresentation(byKey.get("beo_presentation") ?? ""),
+    eventTypes: parseEventTypes(byKey.get("event_types") ?? ""),
+  };
 }
 
 export async function getMemoTypes() {

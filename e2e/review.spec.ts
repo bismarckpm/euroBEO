@@ -1,16 +1,21 @@
+import { copyFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { getPrisma } from "../src/lib/db";
 
 const username = "asistente";
 const password = "prueba-local-123";
-const pdf = path.join(
+const source = path.join(
   process.cwd(),
   "fixtures",
   "presupuestos",
   "Presupuesto Congreso de Reumatología 22 al 24.10.2026 - Evento 3.pdf",
 );
+// Chromium deja el input vacío si la ruta del archivo trae tildes.
+const pdf = path.join(tmpdir(), "presupuesto-reumatologia.pdf");
+copyFileSync(source, pdf);
 
 async function openReview(page: Page) {
   await page.goto("/login");
@@ -66,6 +71,13 @@ async function clearSelected(page: Page) {
 test("el botón sigue deshabilitado mientras hay pendientes", async ({ page }) => {
   test.setTimeout(120_000);
   await openReview(page);
+  const eventId = new URL(page.url()).pathname.split("/")[2] ?? "";
+  const field = await getPrisma().beoField.findFirst({ where: { beo: { eventId } } });
+  if (!field) {
+    throw new Error("La revisión no tiene campos.");
+  }
+  await getPrisma().beoField.update({ where: { id: field.id }, data: { status: "PENDING" } });
+  await page.reload();
   await expect(page.getByTestId("confirmar-generar")).toBeDisabled();
   await expect(page.getByTestId("pendientes-evento")).toContainText("Faltan");
 });

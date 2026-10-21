@@ -2,6 +2,8 @@ export const FIXED_TEXT_KEYS = [
   "special_instructions",
   "service_preparation",
   "footer_initials",
+  "beo_presentation",
+  "event_types",
 ] as const;
 
 export type FixedTextKey = (typeof FIXED_TEXT_KEYS)[number];

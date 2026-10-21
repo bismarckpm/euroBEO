@@ -55,3 +55,17 @@ El sistema MUST guardar el último número de B.E.O. emitido y su año, y MUST p
 #### Scenario: Ajuste inicial
 - **WHEN** la asistente indica que el último número emitido es 0.947/26
 - **THEN** el próximo número propuesto es 0.948/26
+
+### Requirement: Ajustes de presentación de la B.E.O.
+El sistema MUST permitir configurar la fuente del campo EVENTO de la cabecera (cliente o título del evento), el formato de la fecha de la fila (dd/mm/aa o dd.mm.aaaa), el uso de mayúsculas en día y contacto, las etiquetas de los subgrupos de personal y la activación del cálculo de mesas, y MUST aplicarlos en todas las B.E.O. generadas después del cambio.
+
+#### Scenario: Fecha corta
+- **WHEN** el formato configurado es dd/mm/aa
+- **THEN** la fila de la B.E.O. de la cata muestra "23/10/26"
+
+### Requirement: Catálogo de tipos de evento
+El sistema MUST mantener un catálogo de tipos de evento con palabras clave (por ejemplo, CATA, CONGRESO, ALMUERZO, CÓCTEL, CENA, CELEBRACIÓN) usado para deducir la columna EVENTO de la B.E.O.
+
+#### Scenario: Nuevo tipo
+- **WHEN** la asistente agrega el tipo "LANZAMIENTO" con la palabra clave "lanzamiento"
+- **THEN** un evento titulado "Lanzamiento de producto" obtiene EVENTO = "LANZAMIENTO"

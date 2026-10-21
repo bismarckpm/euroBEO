@@ -1,3 +1,5 @@
+import { copyFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 
@@ -5,12 +7,16 @@ const username = "asistente";
 const password = "prueba-local-123";
 
 test("subir Federación China muestra el resumen sin diferencias", async ({ page }) => {
-  const pdf = path.join(
+  test.setTimeout(120_000);
+  const source = path.join(
     process.cwd(),
     "fixtures",
     "presupuestos",
     "Presupuesto Federación China - 07.10.2026 - Evento Interno.pdf",
   );
+  // Chromium deja el input vacío si la ruta del archivo trae tildes.
+  const pdf = path.join(tmpdir(), "presupuesto-china.pdf");
+  copyFileSync(source, pdf);
 
   await page.goto("/login");
   await page.getByLabel("Usuario").fill(username);

@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { PDFDocument } from "pdf-lib";
 import PizZip from "pizzip";
 import { afterAll, describe, expect, it } from "vitest";
+import { looksLikeFood } from "../core/beo/classify";
 import { saveBudget } from "./budget-store";
 import { listMemos } from "./catalog-db";
 import { loadBudgetCatalog } from "./budget-catalog";
@@ -103,6 +104,30 @@ async function readyToGenerate(eventId: string, memoNumber: string): Promise<voi
     where: { memo: { eventId }, status: { not: "RULE" } },
     data: { status: "RULE" },
   });
+  const lines = await prisma.beoLine.findMany({ where: { beo: { eventId } } });
+  for (const line of lines) {
+    if (
+      looksLikeFood(line.description) &&
+      line.section !== "ALIMENTOS" &&
+      line.section !== "BEBIDAS" &&
+      line.section !== "DESCORCHE"
+    ) {
+      await prisma.beoLine.update({
+        where: { id: line.id },
+        data: { section: "ALIMENTOS", groupName: "", status: "RULE", unitPriceCents: line.unitPriceCents ?? 0 },
+      });
+    } else if (!line.section.trim()) {
+      await prisma.beoLine.update({
+        where: { id: line.id },
+        data: { section: "PERSONAL", groupName: line.groupName.trim() || "Evento", status: "RULE" },
+      });
+    } else if (line.section === "PERSONAL" && !line.groupName.trim()) {
+      await prisma.beoLine.update({
+        where: { id: line.id },
+        data: { groupName: "Evento", status: "RULE" },
+      });
+    }
+  }
 }
 
 describe.skipIf(!ready)("revisión del evento", () => {

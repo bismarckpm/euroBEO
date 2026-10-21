@@ -16,6 +16,7 @@ import type { BeoDraft } from "../beo/model";
 import { proposeBeos } from "../beo/propose";
 import { draftToTemplateData } from "./beo-template-data";
 import { countPages } from "./count-pages";
+import { onlySystems, withoutSystems } from "./page-fit";
 import { convertToPdf, PdfConversionError } from "./convert-pdf";
 import { renderDocx } from "./render-docx";
 
@@ -137,11 +138,13 @@ describe.skipIf(!available)("B.E.O. de los presupuestos reales", () => {
     const text = visible(docx);
     expect(weight(busiest)).toBeGreaterThan(0);
     expect(text).toContain(busiest.formattedDate.value);
-    const sample = busiest.food[0]?.text ?? busiest.sections[0]?.groups[0]?.lines[0]?.text;
+    const sample =
+      busiest.food[0]?.description.split("\n")[0] ??
+      busiest.sections[0]?.groups[0]?.lines[0]?.text;
     if (sample) {
-      expect(text.replaceAll("\u00A0", " ")).toContain(sample);
+      expect(text.replaceAll("\u00A0", " ")).toContain(sample.split("\n")[0]);
     }
-    if (data.sistemas.length > 0) {
+    if (data.rightSections.some((section) => section.title === "SISTEMAS")) {
       let pdf: Buffer;
       try {
         pdf = await convertToPdf(docx);
@@ -153,30 +156,8 @@ describe.skipIf(!available)("B.E.O. de los presupuestos reales", () => {
       }
       const pages = await countPages(pdf);
       if (pages > 1) {
-        const main = draftToTemplateData(busiest, {
-          eventTitle: busiest.billboard.value ?? "Evento",
-          number: "0.850/26",
-          preparedOn: "18/10/2026",
-          iniciales: "JG/AR",
-        });
-        main.sistemas = [];
-        const systems = {
-          ...data,
-          tituloDerecha: "SISTEMAS",
-          alimentos: [],
-          bebidas: [],
-          descorche: [],
-          accesos: [],
-          mobiliario: [],
-          electricidad: [],
-          pendiente: [],
-          personalMontaje: [],
-          personalEvento: [],
-          personalDesmontaje: [],
-          montaje: "",
-        };
-        expect(await countPages(await convertToPdf(renderDocx(template, main)))).toBe(1);
-        expect(await countPages(await convertToPdf(renderDocx(template, systems)))).toBe(1);
+        expect(await countPages(await convertToPdf(renderDocx(template, withoutSystems(data))))).toBe(1);
+        expect(await countPages(await convertToPdf(renderDocx(template, onlySystems(data))))).toBe(1);
       }
     }
   }, 90_000);
