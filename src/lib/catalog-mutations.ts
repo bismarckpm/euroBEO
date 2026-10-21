@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isFixedTextKey } from "../core/config/fixed-texts";
 import { normalizeLabel } from "../core/config/normalize";
+import { isBlockHeaderKind, type BlockHeaderKind } from "../core/config/block-headers";
 import { isBeoSection, type BeoSection } from "../core/config/sections";
 import { parseBeoNumber, type SequenceState } from "../core/config/sequence";
 import { recordAudit, type AuditStore, type JsonValue } from "./audit";
@@ -29,12 +30,22 @@ function parsed<T>(schema: z.ZodType<T>, value: unknown, message: string): T {
   return result.data;
 }
 
+type MappingDestination = BeoSection | BlockHeaderKind;
+
 function sectionOf(value: string): BeoSection {
   const section = value.trim();
   if (!isBeoSection(section)) {
     throw new CatalogValidationError("La sección destino no es válida.");
   }
   return section;
+}
+
+function mappingDestination(value: string): MappingDestination {
+  const destination = value.trim();
+  if (isBeoSection(destination) || isBlockHeaderKind(destination)) {
+    return destination;
+  }
+  throw new CatalogValidationError("La sección destino no es válida.");
 }
 
 function normalizedOrThrow(value: string, message: string): string {
@@ -191,12 +202,12 @@ export async function createMapping(
   input: { header: string; section: string },
   db: {
     byNormalized(normalized: string): Promise<{ id: string } | null>;
-    insert(row: { header: string; normalized: string; section: BeoSection }): Promise<MappingRow>;
+    insert(row: { header: string; normalized: string; section: MappingDestination }): Promise<MappingRow>;
   },
   auditStore?: AuditStore,
 ): Promise<MappingRow> {
   const header = parsed(headerText, input.header, "El encabezado es obligatorio.");
-  const section = sectionOf(input.section);
+  const section = mappingDestination(input.section);
   const normalized = normalizedOrThrow(header, "El encabezado no es válido.");
   if (await db.byNormalized(normalized)) {
     throw new CatalogValidationError("Ese encabezado ya está mapeado.");
@@ -221,13 +232,13 @@ export async function updateMapping(
     byNormalized(normalized: string): Promise<{ id: string } | null>;
     update(
       id: string,
-      row: { header: string; normalized: string; section: BeoSection },
+      row: { header: string; normalized: string; section: MappingDestination },
     ): Promise<MappingRow>;
   },
   auditStore?: AuditStore,
 ): Promise<MappingRow> {
   const header = parsed(headerText, input.header, "El encabezado es obligatorio.");
-  const section = sectionOf(input.section);
+  const section = mappingDestination(input.section);
   const normalized = normalizedOrThrow(header, "El encabezado no es válido.");
   const current = await db.byId(input.id);
   if (!current) {

@@ -1,3 +1,4 @@
+import { isBlockHeaderKind, seedBlockHeaderEntries } from "../core/config/block-headers";
 import { isBeoSection } from "../core/config/sections";
 import type { BudgetCatalog } from "../core/budget/parse-budget";
 import { listItems, listMappings, listMemos, listSalons } from "./catalog-db";
@@ -10,6 +11,12 @@ export async function loadBudgetCatalog(): Promise<BudgetCatalog> {
     listMemos(),
   ]);
 
+  const blockHeaders = mappings.flatMap((mapping) =>
+    isBlockHeaderKind(mapping.section)
+      ? [{ normalized: mapping.normalized, kind: mapping.section }]
+      : [],
+  );
+
   return {
     salons: salons.map((salon) => ({
       id: salon.id,
@@ -21,6 +28,7 @@ export async function loadBudgetCatalog(): Promise<BudgetCatalog> {
         ? [{ normalized: mapping.normalized, section: mapping.section }]
         : [],
     ),
+    blockHeaders: blockHeaders.length > 0 ? blockHeaders : seedBlockHeaderEntries(),
     items: items.flatMap((item) =>
       isBeoSection(item.section) ? [{ normalized: item.normalized, section: item.section }] : [],
     ),

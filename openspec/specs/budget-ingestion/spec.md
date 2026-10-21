@@ -51,6 +51,17 @@ El sistema MUST reconstruir los días, los bloques (montaje, evento, desmontaje 
 - **WHEN** la columna de total del salón dice "CORTESÍA" o "Incluido en el evento"
 - **THEN** la renta se marca como cortesía sin monto
 
+### Requirement: Variantes de encabezado de bloque
+El sistema MUST reconocer el tipo de cada bloque (montaje, evento o desmontaje) a partir de variantes configurables de su encabezado, y MUST tratar como evento cualquier encabezado no reconocido.
+
+#### Scenario: Día previo de montaje
+- **WHEN** el bloque del 22 de octubre se titula "Día previo de montaje"
+- **THEN** el bloque se interpreta como montaje
+
+#### Scenario: Encabezado desconocido
+- **WHEN** un bloque se titula "Jornada inaugural"
+- **THEN** el bloque se interpreta como evento
+
 ### Requirement: Lectura tolerante de montos
 El sistema MUST interpretar montos en formato `1.234,56` y `1,234.56`, con o sin paréntesis o guiones decorativos, y MUST almacenarlos como valores exactos en céntimos.
 
