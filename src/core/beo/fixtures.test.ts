@@ -62,6 +62,8 @@ describe.skipIf(!available)("propuesta contra los presupuestos de ejemplo", () =
     expect(topacio.map((draft) => draft.rentCents.value)).toEqual([292500, 292500]);
     const setup = drafts.find((draft) => draft.kind === "MONTAJE" && draft.salon === "Zafiro");
     expect(setup?.guarantee.value).toBeNull();
+    expect(setup?.guarantee.status).toBe("RULE");
+    expect(setup?.guarantee.source).toBe("rule:rn-19");
     expect(setup?.rentCents.value).toBeNull();
     expect(setup?.weekday.value).toBe("Jueves");
     expect(setup?.billboard.value).toContain("REUMATOLOG");
@@ -131,5 +133,20 @@ describe.skipIf(!available)("propuesta contra los presupuestos de ejemplo", () =
     expect(nenaText).toContain("22.10.2026");
     expect(nenaText).toContain("Diamante");
     expect(nenaText.toLowerCase()).toContain("desmontaje");
+    const teardown =
+      diamante?.sections
+        .find((section) => section.section === "PERSONAL")
+        ?.groups.find((group) => group.name === "Desmontaje")
+        ?.lines.map((line) => line.description) ?? [];
+    expect(teardown).toEqual(
+      expect.arrayContaining(["Supervisor", "Limpiador / Acomodador", "Oficial de seguridad"]),
+    );
+    const unclassified = nena
+      .flatMap((draft) => draft.sections)
+      .filter((section) => section.section === "")
+      .flatMap((section) => section.groups)
+      .flatMap((group) => group.lines)
+      .map((line) => line.description);
+    expect(unclassified).toEqual([]);
   });
 });

@@ -19,7 +19,7 @@
     "db:deploy": "prisma migrate deploy",
     "seed:user": "tsx scripts/seed-user.ts",
     "seed:config": "tsx prisma/seed-config.ts",
-    "verify:docx": "tsx scripts/verify-docx-to-pdf.ts",
+    "golden:baseline": "tsx scripts/golden-baseline.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

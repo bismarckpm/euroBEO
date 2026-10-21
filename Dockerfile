@@ -20,6 +20,9 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+ENV EUROBEO_CONTAINER=1
+# LibreOffice queda fijado a 7.4.7.2 40(Build:2), el libreoffice-writer de Debian bookworm.
+# Al cambiar esa versión hay que regenerar y aprobar las líneas base visuales.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     libreoffice-writer \

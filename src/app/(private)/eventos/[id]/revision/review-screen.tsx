@@ -127,6 +127,8 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
   const [changes, setChanges] = useState<FieldChange[] | null>(null);
   const [compareMessage, setCompareMessage] = useState<string | null>(null);
   const requestId = useRef(0);
+  const pendingSaves = useRef(0);
+  const saveIdle = useRef<Array<() => void>>([]);
   const numbered = review.beos.filter((beo) => beo.status !== "voided");
   const beoState = review.beos.map((beo) => `${beo.id}:${beo.status}`).join();
   const selected = review.beos.find((beo) => beo.id === selectedId) ?? review.beos[0];
@@ -159,11 +161,30 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
     };
   }, [review.eventId, review.pendingCount, beoState]);
 
+  function releaseSave(): void {
+    pendingSaves.current = Math.max(0, pendingSaves.current - 1);
+    if (pendingSaves.current > 0) return;
+    const waiting = saveIdle.current.splice(0);
+    for (const resolve of waiting) resolve();
+  }
+
+  function whenSavesFinish(): Promise<void> {
+    if (pendingSaves.current === 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      saveIdle.current.push(resolve);
+    });
+  }
+
   async function send(body: Record<string, unknown>, notice?: string) {
     const id = requestId.current + 1;
     requestId.current = id;
     setError(null);
-    setBusy(true);
+    const locksButton =
+      body.action === "generate" ||
+      body.action === "regenerate-selected" ||
+      body.action === "regenerate-memo";
+    if (locksButton) setBusy(true);
+    else pendingSaves.current += 1;
     try {
       const response = await fetch(`/api/events/${review.eventId}/review`, {
         method: "POST",
@@ -217,8 +238,16 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
       if (id !== requestId.current) return;
       setError("No se pudo conectar con el servidor.");
     } finally {
-      if (id === requestId.current) setBusy(false);
+      if (!locksButton) releaseSave();
+      if (locksButton && id === requestId.current) setBusy(false);
     }
+  }
+
+  async function generateDocuments() {
+    if (busy || generateButtonState(review).disabled) return;
+    setBusy(true);
+    await whenSavesFinish();
+    await send({ action: "generate", numbers, acknowledge });
   }
 
   async function confirmShared() {
@@ -273,7 +302,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
             type="button"
             data-testid="confirmar-generar"
             disabled={busy || generateButtonState(review).disabled}
-            onClick={() => void send({ action: "generate", numbers, acknowledge })}
+            onClick={() => void generateDocuments()}
           >
             {busy ? "Generando…" : "Confirmar y generar"}
           </button>
@@ -800,7 +829,11 @@ function BeoView({
         </section>
         <section>
           {RIGHT_SECTIONS.map((section) => {
-            const lines = beo.lines.filter((line) => line.section === section);
+            const lines = beo.lines.filter((line) =>
+              section === "PENDIENTE"
+                ? line.section === "" || line.section === section
+                : line.section === section,
+            );
             if (lines.length === 0 && section === "PENDIENTE") return null;
             return (
               <div key={section}>

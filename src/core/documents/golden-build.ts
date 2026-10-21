@@ -1,7 +1,7 @@
 import { personnelLine } from "../beo/format";
 import type { BeoDraft } from "../beo/model";
 import { proposeBeos } from "../beo/propose";
-import type { BeoSettings } from "../beo/presentation";
+import { defaultEventTypes, type BeoSettings } from "../beo/presentation";
 import type { TextFragment } from "../budget/fragments";
 import type { BudgetCatalog } from "../budget/parse-budget";
 import { parseBudget } from "../budget/parse-budget";
@@ -16,6 +16,19 @@ import {
 import { draftToTemplateData, type BeoTemplateData } from "./beo-template-data";
 
 export type GoldenAssignment = { date: string; salon: string; number: string };
+
+export const goldenSettings: BeoSettings = {
+  presentation: {
+    eventHeaderSource: "client",
+    dateFormat: "dd/mm/yy",
+    uppercaseDayAndContact: true,
+    setupLabel: "Montaje:",
+    serviceLabel: "Servicio Evento:",
+    teardownLabel: "Desmontaje:",
+    tableCalculation: true,
+  },
+  eventTypes: defaultEventTypes,
+};
 
 export function goldenCatalog(): BudgetCatalog {
   return {

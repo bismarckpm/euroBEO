@@ -1,8 +1,13 @@
 import { defineConfig, devices } from "@playwright/test";
 import { existsSync } from "node:fs";
+import { isolatedDatabaseUrl } from "./e2e/isolated-database";
 
 if (existsSync(".env")) {
   process.loadEnvFile(".env");
+}
+
+if (process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = isolatedDatabaseUrl(process.env.DATABASE_URL);
 }
 
 const webServerEnv: Record<string, string> = { NODE_ENV: "development" };
@@ -18,7 +23,7 @@ export default defineConfig({
   workers: 1,
   use: {
     baseURL: "http://127.0.0.1:3000",
-    trace: "on-first-retry",
+    trace: "retain-on-failure",
   },
   webServer: {
     command: "npm run dev",
