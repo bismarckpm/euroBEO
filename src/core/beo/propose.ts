@@ -1,6 +1,6 @@
 import type { BudgetBlock, BudgetItem, BudgetSection, FieldStatus, ParsedBudget } from "../budget/model";
 import type { FixedTexts } from "../config/fixed-texts";
-import { classifyItem, eventColumn, personnelGroup } from "./classify";
+import { assignPersonnel, classifyItem, eventColumn } from "./classify";
 import { foodSummary, structureFood } from "./food";
 import { displaySalon, formatBeoDate, personnelLine, spanishWeekday, splitCents } from "./format";
 import type { BeoDraft, BeoField, BeoFieldStatus, BeoKind, BeoLine } from "./model";
@@ -248,7 +248,9 @@ function toLine(
       source: "budget.item",
     };
   }
-  const group = resolved === "PERSONAL" ? personnelGroup(section.headerRaw, block.kind) : "";
+  const personnel = resolved === "PERSONAL" ? assignPersonnel(section.headerRaw, block.kind) : null;
+  const group = personnel?.group ?? "";
+  const confirm = review || personnel?.review === true;
   return {
     section: resolved,
     group,
@@ -256,7 +258,7 @@ function toLine(
     description: marked,
     unitPriceCents: price,
     text: personnelLine(item.qty, marked, price),
-    status: group === "" && resolved === "PERSONAL" ? "REVIEW" : status,
+    status: confirm || (group === "" && resolved === "PERSONAL") ? "REVIEW" : status,
     source: "budget.item",
   };
 }

@@ -1,4 +1,5 @@
 import { parseEventTypes, parsePresentation } from "@/core/beo/presentation";
+import { BLOCK_HEADER_KINDS, BLOCK_HEADER_LABELS } from "@/core/config/block-headers";
 import { BEO_SECTIONS, SECTION_LABELS } from "@/core/config/sections";
 import {
   listFixedTexts,
@@ -53,14 +54,32 @@ function activeTab(value: string | undefined): Tab {
   return TABS.some(([id]) => id === value) ? (value as Tab) : "salones";
 }
 
-function SectionSelect({ name, defaultValue }: { name: string; defaultValue?: string }) {
+function SectionSelect({
+  name,
+  defaultValue,
+  blockKinds = false,
+}: {
+  name: string;
+  defaultValue?: string;
+  blockKinds?: boolean;
+}) {
+  const sections = BEO_SECTIONS.map((section) => (
+    <option key={section} value={section}>
+      {SECTION_LABELS[section]}
+    </option>
+  ));
   return (
     <select name={name} defaultValue={defaultValue ?? "ALIMENTOS"} aria-label="Sección destino">
-      {BEO_SECTIONS.map((section) => (
-        <option key={section} value={section}>
-          {SECTION_LABELS[section]}
-        </option>
-      ))}
+      {blockKinds ? <optgroup label="Sección de la B.E.O.">{sections}</optgroup> : sections}
+      {blockKinds ? (
+        <optgroup label="Tipo de bloque">
+          {BLOCK_HEADER_KINDS.map((kind) => (
+            <option key={kind} value={kind}>
+              {BLOCK_HEADER_LABELS[kind]}
+            </option>
+          ))}
+        </optgroup>
+      ) : null}
     </select>
   );
 }
@@ -204,7 +223,7 @@ export default async function ConfigurationPage({
             </label>
             <label>
               Sección destino
-              <SectionSelect name="section" />
+              <SectionSelect name="section" blockKinds />
             </label>
             <button type="submit">Agregar sección</button>
           </form>
@@ -234,7 +253,7 @@ export default async function ConfigurationPage({
                       </label>
                       <label>
                         Sección destino
-                        <SectionSelect name="section" defaultValue={mapping.section} />
+                        <SectionSelect name="section" defaultValue={mapping.section} blockKinds />
                       </label>
                       <button type="submit">Guardar</button>
                     </form>

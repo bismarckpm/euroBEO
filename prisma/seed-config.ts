@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { existsSync } from "node:fs";
 import { normalizeLabel } from "../src/core/config/normalize";
 import {
+  seedBlockHeaders,
   seedCatalogItems,
   seedFixedTexts,
   seedMemoType,
@@ -38,7 +39,17 @@ async function seedSalonsAndAliases(): Promise<void> {
 }
 
 async function seedMappings(): Promise<void> {
-  for (const entry of seedSectionMappings) {
+  const entries = [
+    ...seedSectionMappings.map((entry) => ({
+      header: entry.header,
+      section: entry.section,
+    })),
+    ...seedBlockHeaders.map((entry) => ({
+      header: entry.header,
+      section: entry.kind,
+    })),
+  ];
+  for (const entry of entries) {
     const normalized = normalizeLabel(entry.header);
     await prisma.sectionMapping.upsert({
       where: { normalized },

@@ -19,6 +19,15 @@ export const seedSalons: { name: string; aliases: string[] }[] = [
   { name: "Turmalina - Ópalo", aliases: ["Opalo-Turmalina"] },
 ];
 
+/** Encabezados de bloque. El destino es el tipo de bloque, no una sección de la B.E.O. */
+export const seedBlockHeaders: { header: string; kind: "MONTAJE" | "EVENTO" | "DESMONTAJE" }[] = [
+  { header: "Día previo de montaje", kind: "MONTAJE" },
+  { header: "Día de montaje", kind: "MONTAJE" },
+  { header: "Montaje", kind: "MONTAJE" },
+  { header: "Desmontaje", kind: "DESMONTAJE" },
+  { header: "Día de desmontaje", kind: "DESMONTAJE" },
+];
+
 export const seedSectionMappings: { header: string; section: BeoSection }[] = [
   { header: "PERSONAL", section: "PERSONAL" },
   { header: "PERSONAL MONTAJE", section: "PERSONAL" },

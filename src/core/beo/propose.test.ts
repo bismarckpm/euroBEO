@@ -144,6 +144,35 @@ describe("reparto de la propuesta", () => {
     expect(personnel?.groups.map((group) => group.name)).toEqual(["Montaje"]);
   });
 
+  it("deja en Montaje, para validar, el personal mixto de un bloque de evento", () => {
+    const drafts = proposeBeos(
+      budget([
+        {
+          dates: ["2026-10-22"],
+          raw: "22",
+          blocks: [
+            block({
+              kind: "EVENTO",
+              sections: [
+                {
+                  headerRaw: "PERSONAL PARA EL MONTAJE - DESMONTAJE",
+                  target: tracked("PERSONAL", "RULE"),
+                  items: [item({ qty: 1, description: "Supervisor", unitPrice: 5850 })],
+                },
+              ],
+            }),
+          ],
+        },
+      ]),
+      texts,
+    );
+    const group = drafts[0]?.sections
+      .find((section) => section.section === "PERSONAL")
+      ?.groups.find((entry) => entry.name === "Montaje");
+    expect(group?.lines).toHaveLength(1);
+    expect(group?.lines[0]?.status).toBe("REVIEW");
+  });
+
   it("crea una B.E.O. de desmontaje cuando el día no tiene evento", () => {
     const drafts = proposeBeos(
       budget([{ dates: ["2026-10-17"], raw: "17", blocks: [block({ kind: "DESMONTAJE", salon: tracked("Plaza Real", "RULE"), salonRaw: "Plaza Real" })] }]),

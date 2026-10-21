@@ -1,3 +1,8 @@
+import {
+  resolveBlockKind,
+  seedBlockHeaderEntries,
+  type BlockHeaderEntry,
+} from "../config/block-headers";
 import { classifyCatalogItem, resolveSalonText, resolveSectionHeader } from "../config/resolve";
 import type { CatalogItemEntry, SalonCatalogEntry, SectionMappingEntry } from "../config/resolve";
 import { normalizeLabel } from "../config/normalize";
@@ -31,6 +36,8 @@ export type BudgetCatalog = {
   mappings: SectionMappingEntry[];
   items: CatalogItemEntry[];
   keywords: string[];
+  /** Si falta, el parser usa las variantes semilla de encabezado de bloque. */
+  blockHeaders?: BlockHeaderEntry[];
 };
 
 export type ParseBudgetOptions = {
@@ -89,7 +96,15 @@ function isAllCaps(text: string): boolean {
   return letters.length >= 3 && letters.every((letter) => letter === letter.toUpperCase());
 }
 
-function isBlockTitle(text: string): boolean {
+function isConfiguredBlockTitle(text: string, headers: BlockHeaderEntry[]): boolean {
+  const name = normalizeLabel(text);
+  return Boolean(name) && headers.some((header) => header.normalized === name);
+}
+
+function isBlockTitle(text: string, headers: BlockHeaderEntry[]): boolean {
+  if (isConfiguredBlockTitle(text, headers)) {
+    return true;
+  }
   if (text.includes(":") || !isAllCaps(text)) {
     return false;
   }
@@ -100,18 +115,8 @@ function isBlockTitle(text: string): boolean {
   return /^(montaje|desmontaje|evento|event|setup|disassembly)\b/.test(name);
 }
 
-function kindFromTitle(text: string): BlockKind {
-  const name = normalizeLabel(text);
-  if (/\b(desmontaje|disassembly)\b/.test(name)) {
-    return "DESMONTAJE";
-  }
-  if (/\b(montaje|setup)\b/.test(name)) {
-    return "MONTAJE";
-  }
-  if (/\b(evento|event)\b/.test(name)) {
-    return "EVENTO";
-  }
-  return "OTRO";
+function kindFromTitle(text: string, headers: BlockHeaderEntry[]): BlockKind {
+  return resolveBlockKind(text, headers);
 }
 
 function isBenefitHeader(text: string): boolean {
@@ -199,8 +204,8 @@ function hasBodyText(line: TextLine, columns: ColumnBounds): boolean {
   );
 }
 
-function isTitleLine(text: string): boolean {
-  if (fold(text).includes("datos del cliente") || isBlockTitle(text) || parseDateList(text)) {
+function isTitleLine(text: string, headers: BlockHeaderEntry[]): boolean {
+  if (fold(text).includes("datos del cliente") || isBlockTitle(text, headers) || parseDateList(text)) {
     return false;
   }
   return isAllCaps(text) && text.length <= 80;
@@ -210,7 +215,12 @@ function hasFieldLabel(line: TextLine): boolean {
   return line.fragments.some((fragment) => FIELD_LABELS[labelKey(fragment.text)] !== undefined);
 }
 
-function classify(line: TextLine, columns: ColumnBounds, inBody: boolean): LineKind {
+function classify(
+  line: TextLine,
+  columns: ColumnBounds,
+  inBody: boolean,
+  headers: BlockHeaderEntry[],
+): LineKind {
   const text = lineText(line);
   if (!text) {
     return "ignore";
@@ -231,10 +241,10 @@ function classify(line: TextLine, columns: ColumnBounds, inBody: boolean): LineK
     return "totals";
   }
   if (!inBody) {
-    if (isBlockTitle(text)) {
+    if (isBlockTitle(text, headers)) {
       return "block";
     }
-    if (isTitleLine(text)) {
+    if (isTitleLine(text, headers)) {
       return "title";
     }
     return "fields";
@@ -242,7 +252,7 @@ function classify(line: TextLine, columns: ColumnBounds, inBody: boolean): LineK
   if (isAnchorLine(line, columns)) {
     return "anchor";
   }
-  if (isBlockTitle(text)) {
+  if (isBlockTitle(text, headers)) {
     return "block";
   }
   if (isSectionLine(line, columns, text)) {
@@ -704,6 +714,7 @@ export function parseBudget(
     sawTable = true;
   }
 
+  const blockHeaders = options.catalog?.blockHeaders ?? seedBlockHeaderEntries();
   const columnsFor = (page: number): ColumnBounds =>
     pageColumns.get(page) ?? latest ?? FALLBACK_COLUMNS;
   const firstTable = lines.findIndex((line) => isTableHeader(lineText(line)));
@@ -713,7 +724,7 @@ export function parseBudget(
   const bodyStart = firstTable >= 0 ? firstTable + 1 : firstDate >= 0 ? firstDate : lines.length;
   const marked: MarkedLine[] = lines.map((line, index) => {
     const columns = columnsFor(line.page);
-    return { ...line, columns, kind: classify(line, columns, index >= bodyStart) };
+    return { ...line, columns, kind: classify(line, columns, index >= bodyStart, blockHeaders) };
   });
 
   const budget: ParsedBudget = {
@@ -884,7 +895,7 @@ export function parseBudget(
       continue;
     }
     if (line.kind === "block") {
-      startBlock(kindFromTitle(lineText(line)), lineText(line), line.page);
+      startBlock(kindFromTitle(lineText(line), blockHeaders), lineText(line), line.page);
       continue;
     }
     if (line.kind === "section") {

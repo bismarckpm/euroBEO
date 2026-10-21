@@ -68,25 +68,58 @@ export function classifyItem(input: {
   return { section: null, review: false };
 }
 
-/** El encabezado decide. El tipo de bloque solo entra si el encabezado no dice nada. */
-export function personnelGroup(header: string, blockKind: BlockKind): PersonnelGroup {
+export type PersonnelAssignment = {
+  group: PersonnelGroup;
+  /** El personal quedó en Montaje, pero la asistente tiene que confirmarlo. */
+  review: boolean;
+};
+
+/** "montaje" y "desmontaje" como palabras completas. "desmontaje" no cuenta como "montaje". */
+export function staffHeaderWords(header: string): { montaje: boolean; desmontaje: boolean } {
   const name = fold(header);
-  if (name.includes("desmont")) {
-    return "Desmontaje";
+  return {
+    montaje: /\bmontaje\b/.test(name),
+    desmontaje: /\bdesmontaje\b/.test(name),
+  };
+}
+
+/**
+ * El encabezado decide. Si nombra montaje y desmontaje a la vez, decide el tipo de bloque.
+ * En un bloque de evento ese personal queda en Montaje para validar.
+ */
+export function assignPersonnel(header: string, blockKind: BlockKind): PersonnelAssignment {
+  const name = fold(header);
+  const words = staffHeaderWords(header);
+  if (words.montaje && words.desmontaje) {
+    if (blockKind === "DESMONTAJE") {
+      return { group: "Desmontaje", review: false };
+    }
+    if (blockKind === "MONTAJE") {
+      return { group: "Montaje", review: false };
+    }
+    return { group: "Montaje", review: true };
   }
-  if (name.includes("montaj")) {
-    return "Montaje";
+  if (words.desmontaje) {
+    return { group: "Desmontaje", review: false };
+  }
+  if (words.montaje) {
+    return { group: "Montaje", review: false };
   }
   if (name.includes("personal") || name.includes("servicio")) {
-    return "Evento";
+    return { group: "Evento", review: false };
   }
   if (blockKind === "DESMONTAJE") {
-    return "Desmontaje";
+    return { group: "Desmontaje", review: false };
   }
   if (blockKind === "MONTAJE") {
-    return "Montaje";
+    return { group: "Montaje", review: false };
   }
-  return "Evento";
+  return { group: "Evento", review: false };
+}
+
+/** El encabezado decide. El tipo de bloque solo entra si el encabezado no dice nada. */
+export function personnelGroup(header: string, blockKind: BlockKind): PersonnelGroup {
+  return assignPersonnel(header, blockKind).group;
 }
 
 /** Columna EVENTO: montaje o desmontaje solo si la B.E.O. no tiene servicio ni alimentos. */
