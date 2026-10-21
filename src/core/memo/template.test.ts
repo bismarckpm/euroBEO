@@ -12,6 +12,11 @@ describe("plantilla del memorándum", () => {
     const xml = new PizZip(readFileSync(templatePath)).file("word/document.xml")?.asText() ?? "";
     expect(missingMemoMarkers(xml)).toEqual([]);
     expect(xml).not.toMatch(/NENA|Ainhoa|Milbia|Plaza|Cassandra/i);
+    const zip = new PizZip(readFileSync(templatePath));
+    expect(zip.file("word/media/image1.png")).toBeNull();
+    expect(zip.file("word/_rels/document.xml.rels")?.asText() ?? "").not.toContain("image1.png");
+    expect(zip.file("word/media/image2.png")).toBeTruthy();
+    expect(xml).toContain('w:line="3000"');
   });
 
   it("rechaza una plantilla sin el cuerpo", () => {

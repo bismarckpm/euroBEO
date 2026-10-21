@@ -13,37 +13,14 @@ export function decidePageFit(pageCount: number, hasSystems: boolean): PageFit {
   return "exceeds";
 }
 
-function cleared(): Pick<
-  BeoTemplateData,
-  | "alimentos"
-  | "bebidas"
-  | "descorche"
-  | "electricidad"
-  | "accesos"
-  | "mobiliario"
-  | "pendiente"
-  | "personalMontaje"
-  | "personalEvento"
-  | "personalDesmontaje"
-> {
-  return {
-    alimentos: [],
-    bebidas: [],
-    descorche: [],
-    electricidad: [],
-    accesos: [],
-    mobiliario: [],
-    pendiente: [],
-    personalMontaje: [],
-    personalEvento: [],
-    personalDesmontaje: [],
-  };
+function systemsOf(data: BeoTemplateData) {
+  return data.rightSections.filter((section) => section.title === "SISTEMAS" && section.lines.length > 0);
 }
 
 export function withoutSystems(data: BeoTemplateData): BeoTemplateData {
   return {
     ...data,
-    sistemas: [],
+    rightSections: data.rightSections.filter((section) => section.title !== "SISTEMAS"),
     tituloDerecha: data.tituloDerecha === "SISTEMAS" ? "" : data.tituloDerecha,
   };
 }
@@ -52,15 +29,21 @@ export function withoutSystems(data: BeoTemplateData): BeoTemplateData {
 export function onlySystems(data: BeoTemplateData): BeoTemplateData {
   return {
     ...data,
-    ...cleared(),
-    sistemas: data.sistemas,
+    foodItems: [],
+    rightSections: systemsOf(data),
+    staff: {
+      ...data.staff,
+      setup: [],
+      service: [],
+      teardown: [],
+    },
     tituloDerecha: "SISTEMAS",
     montaje: "",
   };
 }
 
 export function splitForPage(data: BeoTemplateData, pageCount: number): BeoTemplateData[] {
-  const decision = decidePageFit(pageCount, data.sistemas.length > 0);
+  const decision = decidePageFit(pageCount, systemsOf(data).length > 0);
   if (decision === "split") {
     return [withoutSystems(data), onlySystems(data)];
   }

@@ -27,6 +27,20 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./e2e:/app/e2e
+      - ./fixtures:/app/fixtures
+      - ./templates:/app/templates
+      - ./prisma:/app/prisma
+      - ./scripts:/app/scripts
+      - ./public:/app/public
+      - ./tsconfig.json:/app/tsconfig.json
+      - ./playwright.config.ts:/app/playwright.config.ts
+      - ./vitest.config.ts:/app/vitest.config.ts
+      - ./next.config.ts:/app/next.config.ts
+      - ./package.json:/app/package.json
+      - ./openspec:/app/openspec
 
 volumes:
   pgdata:

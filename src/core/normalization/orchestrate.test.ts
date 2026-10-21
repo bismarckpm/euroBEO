@@ -207,6 +207,41 @@ describe("normalizeBudget", () => {
     expect(disabled.days[0]?.blocks[0]?.salon.status).toBe("PENDING");
   });
 
+  it("no consulta a la IA si el respaldo de CENA CONFERENCIA ya clasifica el alimento", async () => {
+    const fragments: string[] = [];
+    const provider: NormalizationProvider = {
+      complete: async (request) => {
+        fragments.push(request.fragment);
+        return { target: "SISTEMAS" };
+      },
+    };
+    const sample = budgetWith("Zafiro");
+    const section = sample.days[0]?.blocks[0]?.sections[0];
+    if (!section) {
+      throw new Error("falta la sección");
+    }
+    section.headerRaw = "CENA CONFERENCIA";
+    section.target = tracked(null, "PENDING");
+    section.items[0]!.description = "Tablas de embutidos por persona";
+    section.items[0]!.section = tracked(null, "PENDING");
+    sample.benefits = [];
+    sample.days[0]!.blocks[0]!.salon = tracked("Zafiro", "RULE");
+    sample.days[0]!.blocks[0]!.schedule = tracked("08:00 a 18:00", "RULE");
+    sample.days[0]!.blocks[0]!.setup = tracked("Mesas", "RULE");
+    sample.days[0]!.blocks[0]!.pax = tracked(10, "RULE");
+
+    const result = await normalizeBudget(sample, {
+      catalog,
+      provider,
+      findLearned: async () => null,
+    });
+    expect(fragments.some((fragment) => fragment.includes("Tablas de embutidos"))).toBe(false);
+    expect(result.days[0]?.blocks[0]?.sections[0]?.items[0]?.section).toEqual({
+      value: null,
+      status: "PENDING",
+    });
+  });
+
   it("no envía el nombre del cliente al proveedor", async () => {
     const seen: string[] = [];
     const provider: NormalizationProvider = {

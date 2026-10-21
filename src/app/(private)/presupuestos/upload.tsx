@@ -32,7 +32,10 @@ export function BudgetUpload() {
     setPending(true);
     try {
       const response = await fetch("/api/budgets", { method: "POST", body: data });
-      setResult((await response.json()) as UploadResponse);
+      const body = (await response.json().catch(() => null)) as UploadResponse | null;
+      setResult(body ?? ({ message: "No se pudo leer el presupuesto.", saved: false } as UploadResponse));
+    } catch {
+      setResult({ message: "No se pudo leer el presupuesto.", saved: false } as UploadResponse);
     } finally {
       setPending(false);
     }

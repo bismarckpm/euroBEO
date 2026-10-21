@@ -1,9 +1,33 @@
 import { z } from "zod";
-import { formatCents } from "../beo/format";
+import { structureFood, type StructuredFood } from "../beo/food";
+import { formatCents, labelAmount } from "../beo/format";
 import type { BeoDraft } from "../beo/model";
+import { defaultBeoSettings, type BeoSettings } from "../beo/presentation";
 import { parseBeoNumber } from "../config/sequence";
 
-const lineSchema = z.object({ texto: z.string() });
+const foodItemSchema = z.object({
+  title: z.string(),
+  lines: z.array(z.string()),
+  includes: z.string().optional(),
+  note: z.string().optional(),
+  paxLabel: z.string().optional(),
+  unitPrice: z.string(),
+  priceSuffix: z.string(),
+});
+
+const rightSectionSchema = z.object({
+  title: z.string(),
+  lines: z.array(z.string()),
+});
+
+const staffSchema = z.object({
+  setupLabel: z.string(),
+  setup: z.array(z.string()),
+  serviceLabel: z.string(),
+  service: z.array(z.string()),
+  teardownLabel: z.string(),
+  teardown: z.array(z.string()),
+});
 
 export const beoTemplateDataSchema = z.object({
   numero: z.string(),
@@ -22,17 +46,9 @@ export const beoTemplateDataSchema = z.object({
   renta: z.string(),
   cartelera: z.string(),
   tituloDerecha: z.string(),
-  alimentos: z.array(lineSchema),
-  bebidas: z.array(lineSchema),
-  descorche: z.array(lineSchema),
-  sistemas: z.array(lineSchema),
-  electricidad: z.array(lineSchema),
-  accesos: z.array(lineSchema),
-  mobiliario: z.array(lineSchema),
-  pendiente: z.array(lineSchema),
-  personalMontaje: z.array(lineSchema),
-  personalEvento: z.array(lineSchema),
-  personalDesmontaje: z.array(lineSchema),
+  foodItems: z.array(foodItemSchema),
+  rightSections: z.array(rightSectionSchema),
+  staff: staffSchema,
   preparacion: z.string(),
   instrucciones: z.string(),
   montaje: z.string(),
@@ -63,14 +79,27 @@ export const REQUIRED_MARKERS = [
   "{tituloDerecha}",
   "{#tieneAlimentos}",
   "{/tieneAlimentos}",
-  "{#alimentos}",
-  "{/alimentos}",
+  "{#foodItems}",
+  "{/foodItems}",
+  "{title}",
+  "{#lines}",
+  "{/lines}",
+  "{.}",
+  "{#showIncludes}",
+  "{/showIncludes}",
+  "{includes}",
+  "{#showNote}",
+  "{/showNote}",
+  "{note}",
+  "{#showPax}",
+  "{/showPax}",
+  "{paxLabel}",
+  "{#showPrice}",
+  "{/showPrice}",
+  "{unitPrice}",
+  "{priceSuffix}",
   "{#bebidas}",
   "{/bebidas}",
-  "{#tieneDescorche}",
-  "{/tieneDescorche}",
-  "{#descorche}",
-  "{/descorche}",
   "{#tieneSistemas}",
   "{/tieneSistemas}",
   "{#sistemas}",
@@ -79,10 +108,6 @@ export const REQUIRED_MARKERS = [
   "{/tieneElectricidad}",
   "{#electricidad}",
   "{/electricidad}",
-  "{#tienePendiente}",
-  "{/tienePendiente}",
-  "{#pendiente}",
-  "{/pendiente}",
   "{#tieneAccesos}",
   "{/tieneAccesos}",
   "{#accesos}",
@@ -95,14 +120,17 @@ export const REQUIRED_MARKERS = [
   "{/tienePersonal}",
   "{#tienePersonalMontaje}",
   "{/tienePersonalMontaje}",
+  "{setupLabel}",
   "{#personalMontaje}",
   "{/personalMontaje}",
   "{#tienePersonalEvento}",
   "{/tienePersonalEvento}",
+  "{serviceLabel}",
   "{#personalEvento}",
   "{/personalEvento}",
   "{#tienePersonalDesmontaje}",
   "{/tienePersonalDesmontaje}",
+  "{teardownLabel}",
   "{#personalDesmontaje}",
   "{/personalDesmontaje}",
   "{preparacion}",
@@ -122,6 +150,9 @@ export type PrintLine = {
   section: string;
   groupName: string;
   text: string;
+  description?: string;
+  qty?: number;
+  unitPriceCents?: number | null;
 };
 
 export type BeoPrintSource = {
@@ -145,6 +176,9 @@ export type BeoPrintSource = {
   preparedOn: string;
   number: string;
   lines: PrintLine[];
+  settings?: BeoSettings;
+  /** Pax del bloque, para decidir si el ítem imprime N° pax. */
+  blockPax?: number | null;
 };
 
 /** Fecha de preparación `dd/mm/aaaa` en la hora de Caracas. */
@@ -165,93 +199,156 @@ function glueUnit(text: string): string {
   return text.replace(/(\d)\s+(c\/u)\b/gi, "$1\u00A0$2");
 }
 
-function linesOf(lines: PrintLine[], section: string): TemplateLine[] {
-  return lines
-    .filter((line) => line.section === section)
-    .map((line) => ({ texto: glueUnit(line.text) }));
-}
-
-function personnelBucket(groupName: string): "montaje" | "evento" | "desmontaje" {
+function personnelBucket(groupName: string): "setup" | "service" | "teardown" {
   const name = groupName
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
   if (name.includes("desmont")) {
-    return "desmontaje";
+    return "teardown";
   }
   if (name.includes("montaj")) {
-    return "montaje";
+    return "setup";
   }
-  return "evento";
+  return "service";
 }
 
-function personnel(
-  lines: PrintLine[],
-  bucket: "montaje" | "evento" | "desmontaje",
-): TemplateLine[] {
-  return lines
-    .filter((line) => line.section === "PERSONAL" && personnelBucket(line.groupName) === bucket)
-    .map((line) => ({ texto: glueUnit(line.text) }));
+function capitalize(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
-export function rightColumnTitle(input: { bebidas: TemplateLine[] }): string {
-  return input.bebidas.length > 0 ? "BEBIDAS" : "";
+function dash(value: string): string {
+  return value.trim() ? value : "—";
 }
 
-/** Arma el contrato de la plantilla. Las secciones vacías quedan en arreglos vacíos. */
+function clock(value: string, uppercase: boolean): string {
+  if (!uppercase) {
+    return value;
+  }
+  return value.replace(/a\.?\s*m\.?/gi, "A.M").replace(/p\.?\s*m\.?/gi, "P.M");
+}
+
+const RIGHT_TITLES = ["BEBIDAS", "SISTEMAS", "ELECTRICIDAD", "ACCESOS", "MOBILIARIO"] as const;
+
+function printedAmount(text: string): string {
+  return glueUnit(labelAmount(text));
+}
+
+function sectionTexts(lines: PrintLine[], section: string): string[] {
+  return lines.filter((line) => line.section === section).map((line) => printedAmount(line.text));
+}
+
+/** Arma el contrato de la plantilla. Las secciones vacías no se imprimen. */
 export function toTemplateData(source: BeoPrintSource): BeoTemplateData {
-  const printable = source.lines.filter((line) => line.section !== "EXCLUIR");
-  const bebidas = linesOf(printable, "BEBIDAS");
-  const sistemas = linesOf(printable, "SISTEMAS");
+  const settings = source.settings ?? defaultBeoSettings;
+  const printable = source.lines.filter((line) => line.section && line.section !== "EXCLUIR");
+  const blockPax = source.blockPax ?? (/^\d+$/.test(source.guarantee) ? Number(source.guarantee) : null);
+  const foodItems = printable
+    .filter((line) => line.section === "ALIMENTOS")
+    .map((line) => {
+      const food: StructuredFood = structureFood({
+        description: line.description?.trim() || line.text,
+        qty: line.qty ?? blockPax ?? 0,
+        unitPriceCents: line.unitPriceCents === undefined ? null : line.unitPriceCents,
+        blockPax,
+        setup: source.setup,
+        tableCalculation: settings.presentation.tableCalculation,
+      });
+      return {
+        title: food.title,
+        lines: food.lines,
+        ...(food.includes ? { includes: food.includes } : {}),
+        ...(food.note ? { note: food.note } : {}),
+        ...(food.paxLabel ? { paxLabel: food.paxLabel } : {}),
+        unitPrice: food.unitPrice,
+        priceSuffix: food.priceSuffix,
+      };
+    });
+  const drinkLines = [...sectionTexts(printable, "BEBIDAS"), ...sectionTexts(printable, "DESCORCHE")];
+  const rightSections = RIGHT_TITLES.flatMap((title) => {
+    const lines = title === "BEBIDAS" ? drinkLines : sectionTexts(printable, title);
+    return lines.length > 0 ? [{ title, lines }] : [];
+  });
+  const staffLines = (bucket: "setup" | "service" | "teardown") =>
+    printable
+      .filter((line) => line.section === "PERSONAL" && personnelBucket(line.groupName) === bucket)
+      .map((line) => printedAmount(line.text));
+  const uppercase = settings.presentation.uppercaseDayAndContact;
+  const evento =
+    settings.presentation.eventHeaderSource === "client"
+      ? source.company || source.eventTitle
+      : source.eventTitle;
+
   return beoTemplateDataSchema.parse({
     numero: source.number,
     preparadoEl: source.preparedOn,
-    evento: source.eventTitle,
-    direccion: source.address,
+    evento,
+    direccion: dash(source.address),
     telefono: source.phone,
-    contacto: source.contact,
+    contacto: uppercase ? source.contact.toUpperCase() : source.contact,
     compania: source.company,
-    dia: source.weekday,
+    dia: uppercase ? source.weekday.toUpperCase() : source.weekday,
     fecha: source.formattedDate,
-    horario: source.schedule,
+    horario: clock(source.schedule, uppercase),
     eventoTipo: source.eventType,
     salon: source.salonName,
     garantia: source.guarantee,
-    renta: source.rent,
+    renta: labelAmount(dash(source.rent)) || "—",
     cartelera: source.billboard,
-    tituloDerecha: rightColumnTitle({ bebidas }),
-    alimentos: linesOf(printable, "ALIMENTOS"),
-    bebidas,
-    descorche: linesOf(printable, "DESCORCHE"),
-    sistemas,
-    electricidad: linesOf(printable, "ELECTRICIDAD"),
-    accesos: linesOf(printable, "ACCESOS"),
-    mobiliario: linesOf(printable, "MOBILIARIO"),
-    pendiente: linesOf(printable, "PENDIENTE"),
-    personalMontaje: personnel(printable, "montaje"),
-    personalEvento: personnel(printable, "evento"),
-    personalDesmontaje: personnel(printable, "desmontaje"),
+    tituloDerecha: drinkLines.length > 0 ? "BEBIDAS" : "",
+    foodItems,
+    rightSections,
+    staff: {
+      setupLabel: settings.presentation.setupLabel,
+      setup: staffLines("setup"),
+      serviceLabel: settings.presentation.serviceLabel,
+      service: staffLines("service"),
+      teardownLabel: settings.presentation.teardownLabel,
+      teardown: staffLines("teardown"),
+    },
     preparacion: source.servicePreparation,
     instrucciones: source.specialInstructions,
-    montaje: source.setup,
+    montaje: capitalize(source.setup),
     iniciales: source.iniciales,
   });
 }
 
 export function draftToTemplateData(
   draft: BeoDraft,
-  extra: { eventTitle: string; number: string; preparedOn: string; iniciales: string },
+  extra: {
+    eventTitle: string;
+    number: string;
+    preparedOn: string;
+    iniciales: string;
+    settings?: BeoSettings;
+  },
 ): BeoTemplateData {
   const lines: PrintLine[] = [
-    ...draft.food.map((line) => ({ section: "ALIMENTOS", groupName: line.group, text: line.text })),
+    ...draft.food
+      .filter((line) => line.section === "ALIMENTOS")
+      .map((line) => ({
+        section: "ALIMENTOS",
+        groupName: line.group,
+        text: line.text,
+        description: line.description,
+        qty: line.qty,
+        unitPriceCents: line.unitPriceCents,
+      })),
     ...draft.sections
-      .filter((section) => section.section !== "ALIMENTOS")
+      .filter((section) => section.section && section.section !== "ALIMENTOS")
       .flatMap((section) =>
         section.groups.flatMap((group) =>
           group.lines.map((line) => ({
             section: section.section,
-            groupName: group.name,
+            groupName: group.name || line.group,
             text: line.text,
+            description: line.description,
+            qty: line.qty,
+            unitPriceCents: line.unitPriceCents,
           })),
         ),
       ),
@@ -277,26 +374,56 @@ export function draftToTemplateData(
     preparedOn: extra.preparedOn,
     number: extra.number,
     lines,
+    settings: extra.settings,
+    blockPax: draft.guarantee.value,
   });
 }
 
+function loopLines(lines: string[]): { texto: string }[] {
+  return lines.map((texto) => ({ texto }));
+}
+
 export function templateContext(data: BeoTemplateData): Record<string, unknown> {
-  const personalCount =
-    data.personalMontaje.length + data.personalEvento.length + data.personalDesmontaje.length;
+  const bebidas = data.rightSections.find((section) => section.title === "BEBIDAS")?.lines ?? [];
+  const sistemas = data.rightSections.find((section) => section.title === "SISTEMAS")?.lines ?? [];
+  const electricidad = data.rightSections.find((section) => section.title === "ELECTRICIDAD")?.lines ?? [];
+  const accesos = data.rightSections.find((section) => section.title === "ACCESOS")?.lines ?? [];
+  const mobiliario = data.rightSections.find((section) => section.title === "MOBILIARIO")?.lines ?? [];
+  const personalCount = data.staff.setup.length + data.staff.service.length + data.staff.teardown.length;
   return {
     ...data,
-    tieneAlimentos: data.alimentos.length > 0,
-    tieneBebidas: data.bebidas.length > 0,
-    tieneDescorche: data.descorche.length > 0,
-    tieneSistemas: data.sistemas.length > 0 && data.tituloDerecha !== "SISTEMAS",
-    tieneElectricidad: data.electricidad.length > 0,
-    tienePendiente: data.pendiente.length > 0,
-    tieneAccesos: data.accesos.length > 0,
-    tieneMobiliario: data.mobiliario.length > 0,
+    foodItems: data.foodItems.map((item) => ({
+      ...item,
+      showIncludes: Boolean(item.includes),
+      showNote: Boolean(item.note),
+      showPax: Boolean(item.paxLabel),
+      showPrice: Boolean(item.unitPrice),
+    })),
+    tieneAlimentos: data.foodItems.length > 0,
+    bebidas: loopLines(bebidas),
+    tieneBebidas: bebidas.length > 0,
+    tieneDescorche: false,
+    descorche: [],
+    sistemas: loopLines(sistemas),
+    tieneSistemas: sistemas.length > 0 && data.tituloDerecha !== "SISTEMAS",
+    electricidad: loopLines(electricidad),
+    tieneElectricidad: electricidad.length > 0,
+    tienePendiente: false,
+    pendiente: [],
+    accesos: loopLines(accesos),
+    tieneAccesos: accesos.length > 0,
+    mobiliario: loopLines(mobiliario),
+    tieneMobiliario: mobiliario.length > 0,
+    setupLabel: data.staff.setupLabel,
+    serviceLabel: data.staff.serviceLabel,
+    teardownLabel: data.staff.teardownLabel,
+    personalMontaje: loopLines(data.staff.setup),
+    personalEvento: loopLines(data.staff.service),
+    personalDesmontaje: loopLines(data.staff.teardown),
     tienePersonal: personalCount > 0,
-    tienePersonalMontaje: data.personalMontaje.length > 0,
-    tienePersonalEvento: data.personalEvento.length > 0,
-    tienePersonalDesmontaje: data.personalDesmontaje.length > 0,
+    tienePersonalMontaje: data.staff.setup.length > 0,
+    tienePersonalEvento: data.staff.service.length > 0,
+    tienePersonalDesmontaje: data.staff.teardown.length > 0,
     tieneMontaje: data.montaje.trim().length > 0,
   };
 }

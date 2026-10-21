@@ -1,3 +1,4 @@
+import { defaultEventTypes } from "../beo/presentation";
 import type { BeoSection } from "./sections";
 
 /**
@@ -26,6 +27,9 @@ export const seedSectionMappings: { header: string; section: BeoSection }[] = [
   { header: "PERSONAL PARA EL SERVICIO DE COMIDAS", section: "PERSONAL" },
   { header: "ALIMENTOS", section: "ALIMENTOS" },
   { header: "ALIMENTOS Y BEBIDAS", section: "ALIMENTOS" },
+  { header: "CENA CONFERENCIA", section: "ALIMENTOS" },
+  { header: "CATA", section: "ALIMENTOS" },
+  { header: "CENA", section: "ALIMENTOS" },
   { header: "BEBIDAS", section: "BEBIDAS" },
   { header: "SISTEMAS", section: "SISTEMAS" },
   { header: "DESCORCHE", section: "DESCORCHE" },
@@ -41,6 +45,10 @@ export const seedCatalogItems: { description: string; category: string; section:
   { description: "Filtros de agua", category: "Bebidas", section: "BEBIDAS" },
   { description: "Refrescos", category: "Bebidas", section: "BEBIDAS" },
   { description: "Agua mineral", category: "Bebidas", section: "BEBIDAS" },
+  { description: "Descorche de Vino o Espumante", category: "Descorche", section: "DESCORCHE" },
+  { description: "Tablas de embutidos por persona", category: "Alimentos", section: "ALIMENTOS" },
+  { description: "Pasapalos 1p/p", category: "Alimentos", section: "ALIMENTOS" },
+  { description: "Cata", category: "Alimentos", section: "ALIMENTOS" },
   { description: "Internet", category: "Sistemas", section: "SISTEMAS" },
   { description: "Mesas cocteleras", category: "Mobiliario", section: "MOBILIARIO" },
 ];
@@ -65,6 +73,24 @@ export const seedFixedTexts: { key: string; label: string; body: string }[] = [
     key: "footer_initials",
     label: "Iniciales del pie",
     body: "JG/AR",
+  },
+  {
+    key: "beo_presentation",
+    label: "Presentación de la B.E.O.",
+    body: JSON.stringify({
+      eventHeaderSource: "client",
+      dateFormat: "dd/mm/yy",
+      uppercaseDayAndContact: true,
+      setupLabel: "Montaje:",
+      serviceLabel: "Servicio Evento:",
+      teardownLabel: "Desmontaje:",
+      tableCalculation: true,
+    }),
+  },
+  {
+    key: "event_types",
+    label: "Tipos de evento",
+    body: JSON.stringify(defaultEventTypes),
   },
 ];
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   EventReview,
   ReviewBeo,
@@ -8,6 +8,7 @@ import type {
   ReviewLine,
   ReviewMemo,
 } from "@/lib/event-review";
+import { generateButtonState } from "@/core/documents/validate-beo";
 import { formatAmount } from "@/lib/format";
 
 const FIELD_LABELS: Record<string, string> = {
@@ -125,6 +126,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
   const [chosenMemos, setChosenMemos] = useState<string[]>([]);
   const [changes, setChanges] = useState<FieldChange[] | null>(null);
   const [compareMessage, setCompareMessage] = useState<string | null>(null);
+  const requestId = useRef(0);
   const numbered = review.beos.filter((beo) => beo.status !== "voided");
   const beoState = review.beos.map((beo) => `${beo.id}:${beo.status}`).join();
   const selected = review.beos.find((beo) => beo.id === selectedId) ?? review.beos[0];
@@ -158,6 +160,8 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
   }, [review.eventId, review.pendingCount, beoState]);
 
   async function send(body: Record<string, unknown>, notice?: string) {
+    const id = requestId.current + 1;
+    requestId.current = id;
     setError(null);
     setBusy(true);
     try {
@@ -174,6 +178,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
             driveMessage?: string | null;
           })
         | null;
+      if (id !== requestId.current) return;
       if (!response.ok || !data) {
         if (response.status === 409 && (data?.message ?? "").includes("ya fue usado")) {
           setAcknowledge(true);
@@ -187,6 +192,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
         setAcknowledge(false);
         setMessage(notice ?? "Se inició la generación de los documentos del evento.");
         const refreshed = await fetch(`/api/events/${review.eventId}/review`);
+        if (id !== requestId.current) return;
         if (refreshed.ok) {
           const next = (await refreshed.json()) as EventReview;
           setReview(next);
@@ -208,9 +214,10 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
       }
       setMessage(notice ?? null);
     } catch {
+      if (id !== requestId.current) return;
       setError("No se pudo conectar con el servidor.");
     } finally {
-      setBusy(false);
+      if (id === requestId.current) setBusy(false);
     }
   }
 
@@ -265,7 +272,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
           <button
             type="button"
             data-testid="confirmar-generar"
-            disabled={busy || review.pendingCount > 0}
+            disabled={busy || generateButtonState(review).disabled}
             onClick={() => void send({ action: "generate", numbers, acknowledge })}
           >
             {busy ? "Generando…" : "Confirmar y generar"}
@@ -285,6 +292,47 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
           </button>
         </div>
       </header>
+      {generateButtonState(review).messages.length > 0 ? (
+        <ul className="alert" data-testid="errores-validacion">
+          {review.issues.map((issue) => (
+            <li key={`${issue.beo}-${issue.field}`}>{issue.message}</li>
+          ))}
+        </ul>
+      ) : null}
+      <form
+        className="form-inline"
+        data-testid="caso-dorado"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const input = event.currentTarget.elements.namedItem("referencia");
+          if (!(input instanceof HTMLInputElement) || !input.files?.[0]) {
+            setError("Adjunta la B.E.O. corregida en .docx o PDF.");
+            return;
+          }
+          const body = new FormData();
+          body.set("referencia", input.files[0]);
+          void fetch(`/api/events/${review.eventId}/golden`, { method: "POST", body })
+            .then(async (response) => {
+              const data = (await response.json()) as { message?: string };
+              if (!response.ok) {
+                setError(data.message ?? "No se pudo guardar el caso dorado.");
+                return;
+              }
+              setReview((current) => ({ ...current, goldenCandidate: true }));
+              setMessage(data.message ?? "El evento quedó como caso dorado candidato.");
+              setError(null);
+            })
+            .catch(() => setError("No se pudo guardar el caso dorado."));
+        }}
+      >
+        <label>
+          B.E.O. corregida
+          <input name="referencia" type="file" accept=".docx,.pdf,application/pdf" />
+        </label>
+        <button type="submit">
+          {review.goldenCandidate ? "Caso dorado candidato" : "Marcar como caso dorado"}
+        </button>
+      </form>
       {error ? <p className="alert">{error}</p> : null}
       {message ? (
         <p className="notice" data-testid="generacion">

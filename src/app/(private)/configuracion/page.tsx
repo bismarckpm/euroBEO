@@ -1,3 +1,4 @@
+import { parseEventTypes, parsePresentation } from "@/core/beo/presentation";
 import { BEO_SECTIONS, SECTION_LABELS } from "@/core/config/sections";
 import {
   listFixedTexts,
@@ -23,6 +24,9 @@ import {
   changeSalon,
   changeSequence,
   changeTexts,
+  changePresentation,
+  addEventType,
+  dropEventType,
   uploadTemplate,
   dropAlias,
   dropItem,
@@ -38,6 +42,7 @@ const TABS = [
   ["textos", "Textos"],
   ["memorandums", "Memorándums"],
   ["correlativo", "Correlativo"],
+  ["presentacion", "Presentación"],
   ["aprendidas", "Aprendidas"],
   ["plantilla", "Plantilla"],
 ] as const;
@@ -87,6 +92,8 @@ export default async function ConfigurationPage({
     listTemplates(),
   ]);
   const probe = params.prueba?.trim() ? await resolveSalon(params.prueba) : null;
+  const presentation = parsePresentation(texts.find((row) => row.key === "beo_presentation")?.body ?? "");
+  const eventTypes = parseEventTypes(texts.find((row) => row.key === "event_types")?.body ?? "");
 
   return (
     <main className="panel">
@@ -363,6 +370,80 @@ export default async function ConfigurationPage({
           </label>
           <button type="submit">Subir plantilla</button>
         </form>
+      ) : null}
+
+      {tab === "presentacion" ? (
+        <section className="stack">
+          <h2>Presentación de la B.E.O.</h2>
+          <form action={changePresentation} className="stack">
+            <label>
+              Campo EVENTO de la cabecera
+              <select name="eventHeaderSource" defaultValue={presentation.eventHeaderSource}>
+                <option value="client">Cliente</option>
+                <option value="title">Título del evento</option>
+              </select>
+            </label>
+            <label>
+              Formato de la fecha
+              <select name="dateFormat" defaultValue={presentation.dateFormat}>
+                <option value="dd/mm/yy">dd/mm/aa</option>
+                <option value="dd.mm.yyyy">dd.mm.aaaa</option>
+              </select>
+            </label>
+            <label>
+              <input
+                name="uppercaseDayAndContact"
+                type="checkbox"
+                defaultChecked={presentation.uppercaseDayAndContact}
+              />
+              Día y contacto en mayúsculas
+            </label>
+            <label>
+              <input name="tableCalculation" type="checkbox" defaultChecked={presentation.tableCalculation} />
+              Calcular mesas
+            </label>
+            <label>
+              Etiqueta de montaje
+              <input name="setupLabel" required defaultValue={presentation.setupLabel} />
+            </label>
+            <label>
+              Etiqueta de servicio
+              <input name="serviceLabel" required defaultValue={presentation.serviceLabel} />
+            </label>
+            <label>
+              Etiqueta de desmontaje
+              <input name="teardownLabel" required defaultValue={presentation.teardownLabel} />
+            </label>
+            <button type="submit">Guardar presentación</button>
+          </form>
+          <h2>Tipos de evento</h2>
+          <form action={addEventType} className="form-inline">
+            <label>
+              Etiqueta
+              <input name="label" required maxLength={40} placeholder="LANZAMIENTO" />
+            </label>
+            <label>
+              Palabras clave, separadas por coma
+              <input name="keywords" required placeholder="lanzamiento" />
+            </label>
+            <button type="submit">Agregar tipo</button>
+          </form>
+          <ul>
+            {eventTypes.map((type) => (
+              <li key={type.label}>
+                <form action={dropEventType} className="form-inline">
+                  <span>
+                    {type.label}: {type.keywords.join(", ")}
+                  </span>
+                  <input type="hidden" name="label" value={type.label} />
+                  <button className="quiet" type="submit">
+                    Eliminar
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
       {tab === "aprendidas" ? (

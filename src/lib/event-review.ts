@@ -2,7 +2,9 @@ import { formatCents, personnelLine } from "../core/beo/format";
 import { recordAudit, type JsonValue } from "./audit";
 import { createBeoProposal } from "./beo-store";
 import { listMemos } from "./catalog-db";
+import { validateBeoLines, type BeoIssue } from "../core/documents/validate-beo";
 import { getPrisma } from "./db";
+import { readGoldenCandidate } from "./golden-candidate";
 import {
   addEventMemo,
   MemoFlowError,
@@ -66,6 +68,8 @@ export type EventReview = {
   eventId: string;
   title: string;
   pendingCount: number;
+  issues: BeoIssue[];
+  goldenCandidate: boolean;
   shared: Record<(typeof SHARED_KEYS)[number], string | null>;
   beos: ReviewBeo[];
   memos: ReviewMemo[];
@@ -189,14 +193,17 @@ function toReview(
       null;
   }
 
+  const active = beos.filter((beo) => beo.status !== "voided");
   return {
     eventId: event.id,
     title: event.title,
     pendingCount:
-      beos
-        .filter((beo) => beo.status !== "voided")
-        .reduce((sum, beo) => sum + beo.pendingCount, 0) +
+      active.reduce((sum, beo) => sum + beo.pendingCount, 0) +
       memos.reduce((sum, memo) => sum + memo.pendingCount, 0),
+    issues: active.flatMap((beo) =>
+      validateBeoLines(`${beo.salon} ${beo.date}`, beo.lines),
+    ),
+    goldenCandidate: false,
     shared,
     beos,
     memos,
@@ -299,7 +306,8 @@ export async function getEventReview(eventId: string): Promise<EventReview> {
     return getEventReview(eventId);
   }
   const memoTypes = (await listMemos()).map((memo) => ({ id: memo.id, name: memo.name }));
-  return toReview(event, await syncEventMemos(event.id), memoTypes);
+  const review = toReview(event, await syncEventMemos(event.id), memoTypes);
+  return { ...review, goldenCandidate: (await readGoldenCandidate(eventId)) !== null };
 }
 
 async function ownedBeo(eventId: string, beoId: string) {

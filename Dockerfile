@@ -23,6 +23,7 @@ ENV HOSTNAME=0.0.0.0
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     libreoffice-writer \
+    poppler-utils \
     fonts-liberation \
     fonts-dejavu-core \
     fontconfig \
@@ -42,6 +43,10 @@ COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/templates ./templates
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /entrypoint.sh \
+  && npx playwright install-deps chromium \
+  && npx playwright install chromium
+RUN sed -i 's/\r$//' /entrypoint.sh
+RUN DATABASE_URL=postgresql://build:build@localhost:5432/build npx prisma generate
 EXPOSE 3000
 ENTRYPOINT ["/entrypoint.sh"]

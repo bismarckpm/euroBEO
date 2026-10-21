@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { parseEventTypes, parsePresentation } from "@/core/beo/presentation";
 import {
   editItem,
   editMapping,
@@ -18,6 +19,7 @@ import {
   saveMemo,
   saveSalon,
   saveSequence,
+  listFixedTexts,
 } from "@/lib/catalog-db";
 import { CatalogValidationError } from "@/lib/catalog-mutations";
 import { saveTemplateVersion, TemplateError } from "@/lib/template-store";
@@ -37,6 +39,7 @@ const tabs = new Set([
   "textos",
   "memorandums",
   "correlativo",
+  "presentacion",
   "aprendidas",
   "plantilla",
 ]);
@@ -190,6 +193,61 @@ export async function changeTexts(formData: FormData): Promise<void> {
     fail("textos", error);
   }
   redirect("/configuracion?tab=textos&guardado=1");
+}
+
+export async function changePresentation(formData: FormData): Promise<void> {
+  await requireSession();
+  const presentation = parsePresentation(
+    JSON.stringify({
+      eventHeaderSource: text(formData, "eventHeaderSource"),
+      dateFormat: text(formData, "dateFormat"),
+      uppercaseDayAndContact: formData.get("uppercaseDayAndContact") === "on",
+      tableCalculation: formData.get("tableCalculation") === "on",
+      setupLabel: text(formData, "setupLabel"),
+      serviceLabel: text(formData, "serviceLabel"),
+      teardownLabel: text(formData, "teardownLabel"),
+    }),
+  );
+  try {
+    await saveFixedText("beo_presentation", JSON.stringify(presentation));
+  } catch (error) {
+    fail("presentacion", error);
+  }
+  redirect("/configuracion?tab=presentacion&guardado=1");
+}
+
+export async function addEventType(formData: FormData): Promise<void> {
+  await requireSession();
+  const rows = await listFixedTexts();
+  const current = parseEventTypes(rows.find((row) => row.key === "event_types")?.body ?? "");
+  const label = text(formData, "label").toUpperCase();
+  const keywords = text(formData, "keywords")
+    .split(",")
+    .map((keyword) => keyword.trim())
+    .filter(Boolean);
+  const next = [...current.filter((entry) => entry.label.toUpperCase() !== label), { label, keywords }];
+  try {
+    await saveFixedText("event_types", JSON.stringify(next));
+  } catch (error) {
+    fail("presentacion", error);
+  }
+  redirect("/configuracion?tab=presentacion&guardado=1");
+}
+
+export async function dropEventType(formData: FormData): Promise<void> {
+  await requireSession();
+  const rows = await listFixedTexts();
+  const current = parseEventTypes(rows.find((row) => row.key === "event_types")?.body ?? "");
+  const label = text(formData, "label");
+  try {
+    await saveFixedText(
+      "event_types",
+      JSON.stringify(current.filter((entry) => entry.label !== label)),
+    );
+  } catch (error) {
+    fail("presentacion", error);
+  }
+  redirect("/configuracion?tab=presentacion&guardado=1");
 }
 
 export async function addMemo(formData: FormData): Promise<void> {

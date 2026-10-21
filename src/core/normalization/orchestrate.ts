@@ -1,3 +1,4 @@
+import { classifyItem } from "../beo/classify";
 import { tracked, type FieldStatus, type ParsedBudget } from "../budget/model";
 import { normalizeLabel } from "../config/normalize";
 import { maskFragment, type ClientMaskData } from "./mask";
@@ -201,6 +202,16 @@ export async function normalizeBudget(
           }
           const description = usable(item.description.split("\n")[0] ?? "");
           if (!description) {
+            continue;
+          }
+          const headerSection = section.target.status === "AI" ? null : section.target.value;
+          const fallback = classifyItem({
+            description: item.description,
+            catalogSection: null,
+            headerSection,
+            aiSection: null,
+          });
+          if (fallback.section) {
             continue;
           }
           await applySection(

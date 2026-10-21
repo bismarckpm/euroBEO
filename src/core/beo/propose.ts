@@ -1,7 +1,10 @@
 import type { BudgetBlock, BudgetItem, BudgetSection, FieldStatus, ParsedBudget } from "../budget/model";
 import type { FixedTexts } from "../config/fixed-texts";
-import { displaySalon, formatBeoDate, formatCents, personnelLine, spanishWeekday, splitCents } from "./format";
+import { classifyItem, eventColumn, personnelGroup } from "./classify";
+import { foodSummary, structureFood } from "./food";
+import { displaySalon, formatBeoDate, personnelLine, spanishWeekday, splitCents } from "./format";
 import type { BeoDraft, BeoField, BeoFieldStatus, BeoKind, BeoLine } from "./model";
+import { defaultBeoSettings, type BeoSettings } from "./presentation";
 
 type Slice = {
   date: string;
@@ -105,20 +108,15 @@ function kindOf(blocks: BudgetBlock[]): BeoKind {
   return "MONTAJE";
 }
 
-function eventLabel(title: string, kind: BeoKind): string {
-  if (kind === "MONTAJE") {
-    return "Montaje";
+function formatRowDate(iso: string, settings: BeoSettings): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) {
+    return formatBeoDate(iso);
   }
-  if (kind === "DESMONTAJE") {
-    return "Desmontaje";
+  if (settings.presentation.dateFormat === "dd/mm/yy") {
+    return `${match[3]}/${match[2]}/${match[1].slice(2)}`;
   }
-  const upper = title.toUpperCase();
-  if (upper.includes("CONGRESO")) return "Congreso";
-  if (upper.includes("CENA")) return "Cena";
-  if (upper.includes("ALMUERZO")) return "Almuerzo";
-  if (upper.includes("REUNI")) return "Reunión";
-  if (upper.includes("CÓCTEL") || upper.includes("COCTEL")) return "Cóctel";
-  return "Evento";
+  return formatBeoDate(iso);
 }
 
 function firstText(
@@ -164,24 +162,37 @@ function oneLine(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-function resolveSection(item: BudgetItem, section: BudgetSection): string | null {
-  const declared = item.section.value ?? section.target.value;
-  if (declared === "EXCLUIR") {
-    return null;
+function ruledSection(value: string | null, status: FieldStatus): string | null {
+  return status === "AI" ? null : value;
+}
+
+function resolveSection(item: BudgetItem, section: BudgetSection): { section: string | null; review: boolean } {
+  const catalog = ruledSection(item.section.value, item.section.status);
+  const header = ruledSection(section.target.value, section.target.status);
+  if (catalog === "EXCLUIR" || header === "EXCLUIR") {
+    return { section: null, review: false };
   }
-  if (declared) {
-    return declared;
+  const aiSection =
+    (item.section.status === "AI" ? item.section.value : null) ??
+    (section.target.status === "AI" ? section.target.value : null);
+  const classified = classifyItem({
+    description: item.description,
+    catalogSection: catalog,
+    headerSection: header,
+    aiSection,
+  });
+  if (classified.section) {
+    return classified;
   }
   const haystack = `${section.headerRaw} ${item.description}`.toLowerCase();
-  if (haystack.includes("internet") || haystack.includes("sistema")) return "SISTEMAS";
-  if (haystack.includes("personal")) return "PERSONAL";
-  if (haystack.includes("alimento")) return "ALIMENTOS";
-  if (haystack.includes("bebida")) return "BEBIDAS";
-  if (haystack.includes("acceso")) return "ACCESOS";
-  if (haystack.includes("descorche")) return "DESCORCHE";
-  if (haystack.includes("mobiliario")) return "MOBILIARIO";
-  if (haystack.includes("electric")) return "ELECTRICIDAD";
-  return "PENDIENTE";
+  if (haystack.includes("internet") || haystack.includes("sistema")) return { section: "SISTEMAS", review: false };
+  if (haystack.includes("personal")) return { section: "PERSONAL", review: false };
+  if (haystack.includes("alimento")) return { section: "ALIMENTOS", review: false };
+  if (haystack.includes("bebida")) return { section: "BEBIDAS", review: false };
+  if (haystack.includes("acceso")) return { section: "ACCESOS", review: false };
+  if (haystack.includes("mobiliario")) return { section: "MOBILIARIO", review: false };
+  if (haystack.includes("electric")) return { section: "ELECTRICIDAD", review: false };
+  return { section: null, review: true };
 }
 
 function lineStatus(item: BudgetItem, section: BudgetSection): BeoFieldStatus {
@@ -204,47 +215,40 @@ function unitPrice(item: BudgetItem): number | null {
   return null;
 }
 
-function personnelGroup(block: BudgetBlock, header: string): string {
-  const normalized = header.toLowerCase();
-  if (normalized.includes("desmont")) return "Desmontaje";
-  if (normalized.includes("montaje")) return "Montaje";
-  if (block.kind === "MONTAJE") return "Montaje";
-  if (block.kind === "DESMONTAJE") return "Desmontaje";
-  return "Evento";
-}
-
 function toLine(
   item: BudgetItem,
   section: BudgetSection,
   block: BudgetBlock,
   resolved: string,
+  review: boolean,
+  settings: BeoSettings,
 ): BeoLine {
   const price = unitPrice(item);
   const description = resolved === "ALIMENTOS" ? item.description.trim() : oneLine(item.description);
   const marks = item.flags.filter((flag) => flag === "AM" || flag === "PM");
   const marked = marks.length > 0 ? `${description} ${marks.join(" ")}` : description;
-  const status = lineStatus(item, section);
+  const status = review ? "REVIEW" : lineStatus(item, section);
   if (resolved === "ALIMENTOS") {
-    const parts = [
-      marked,
-      `N° pax: ${item.qty}`,
-      `PRECIO: USD ${price === null ? "—" : formatCents(price)} c/u x ${item.qty} pax`,
-    ];
-    if (block.schedule.value) {
-      parts.push(`Hora: ${block.schedule.value}`);
-    }
+    const food = structureFood({
+      description: marked,
+      qty: item.qty,
+      unitPriceCents: price,
+      blockPax: block.pax.value,
+      setup: block.setup.value,
+      tableCalculation: settings.presentation.tableCalculation,
+    });
     return {
       section: resolved,
       group: "",
       qty: item.qty,
       description: marked,
       unitPriceCents: price,
-      text: parts.join("\n"),
-      status,
+      text: foodSummary(food),
+      status: food.needsReview ? "REVIEW" : status,
       source: "budget.item",
     };
   }
-  const group = resolved === "PERSONAL" ? personnelGroup(block, section.headerRaw) : "";
+  const group = resolved === "PERSONAL" ? personnelGroup(section.headerRaw, block.kind) : "";
   return {
     section: resolved,
     group,
@@ -252,35 +256,52 @@ function toLine(
     description: marked,
     unitPriceCents: price,
     text: personnelLine(item.qty, marked, price),
-    status,
+    status: group === "" && resolved === "PERSONAL" ? "REVIEW" : status,
     source: "budget.item",
   };
 }
 
-function collectLines(slices: Slice[]): { food: BeoLine[]; sections: BeoDraft["sections"] } {
+function collectLines(
+  slices: Slice[],
+  settings: BeoSettings,
+): { food: BeoLine[]; sections: BeoDraft["sections"] } {
   const food: BeoLine[] = [];
   const bySection = new Map<string, BeoLine[]>();
   for (const slice of slices) {
     for (const section of slice.block.sections) {
       for (const item of section.items) {
         const resolved = resolveSection(item, section);
-        if (!resolved) {
+        if (!resolved.section) {
+          const pending = toLine(item, section, slice.block, "ALIMENTOS", true, settings);
+          pending.section = "";
+          pending.status = "PENDING";
+          pending.text = oneLine(item.description);
+          const bucket = bySection.get("") ?? [];
+          bucket.push(pending);
+          bySection.set("", bucket);
           continue;
         }
-        const line = toLine(item, section, slice.block, resolved);
-        if (resolved === "ALIMENTOS") {
+        const line = toLine(item, section, slice.block, resolved.section, resolved.review, settings);
+        if (resolved.section === "ALIMENTOS") {
           food.push(line);
           continue;
         }
-        const bucket = bySection.get(resolved) ?? [];
+        const bucket = bySection.get(resolved.section) ?? [];
         bucket.push(line);
-        bySection.set(resolved, bucket);
+        bySection.set(resolved.section, bucket);
       }
     }
   }
 
   const sections: BeoDraft["sections"] = [];
+  const unclassified = bySection.get("") ?? [];
+  if (unclassified.length > 0) {
+    sections.push({ section: "", groups: [{ name: "", lines: unclassified }] });
+  }
   for (const section of RIGHT_SECTIONS) {
+    if (section === "PENDIENTE") {
+      continue;
+    }
     const lines = bySection.get(section) ?? [];
     if (lines.length === 0) {
       continue;
@@ -298,7 +319,12 @@ function collectLines(slices: Slice[]): { food: BeoLine[]; sections: BeoDraft["s
   return { food, sections };
 }
 
-function buildDraft(budget: ParsedBudget, slices: Slice[], texts: FixedTexts): BeoDraft {
+function buildDraft(
+  budget: ParsedBudget,
+  slices: Slice[],
+  texts: FixedTexts,
+  settings: BeoSettings,
+): BeoDraft {
   const blocks = slices.map((slice) => slice.block);
   const kind = kindOf(blocks);
   const salon = slices[0]?.salon ?? "Por definir";
@@ -310,8 +336,15 @@ function buildDraft(budget: ParsedBudget, slices: Slice[], texts: FixedTexts): B
   const schedule = firstText(schedulePool.length > 0 ? schedulePool : slices, (block) => block.schedule);
   const setupPool = slices.filter((slice) => slice.block.kind === "MONTAJE");
   const setup = firstText(setupPool.length > 0 ? setupPool : slices, (block) => block.setup);
-  const lines = collectLines(slices);
+  const lines = collectLines(slices, settings);
   const title = budget.eventTitle ?? "";
+  const hasService = lines.sections.some(
+    (section) =>
+      section.section === "PERSONAL" &&
+      section.groups.some((group) => group.name === "Evento" && group.lines.length > 0),
+  );
+  const weekday = spanishWeekday(date);
+  const rowDate = formatRowDate(date, settings);
 
   return {
     date,
@@ -322,10 +355,24 @@ function buildDraft(budget: ParsedBudget, slices: Slice[], texts: FixedTexts): B
     contact: clientField(budget.client.contact, "budget.client.contact"),
     phone: clientField(budget.client.phones, "budget.client.phone"),
     address: clientField(budget.client.address, "budget.client.address"),
-    weekday: field(spanishWeekday(date), "RULE", "rule:date"),
-    formattedDate: field(formatBeoDate(date), "RULE", "rule:date"),
+    weekday: field(
+      settings.presentation.uppercaseDayAndContact ? weekday.toUpperCase() : weekday,
+      "RULE",
+      "rule:date",
+    ),
+    formattedDate: field(rowDate, "RULE", "rule:date"),
     schedule,
-    eventType: field(eventLabel(title, kind), "RULE", "rule:event-type"),
+    eventType: field(
+      eventColumn({
+        title,
+        kind,
+        hasFood: lines.food.length > 0,
+        hasServiceStaff: hasService,
+        types: settings.eventTypes,
+      }),
+      "RULE",
+      "rule:event-type",
+    ),
     salonName: field(salon, slices.some((slice) => slice.needsReview) ? "REVIEW" : inherited(blocks[0]?.salon.status ?? "PENDING"), "budget.salon"),
     guarantee: guaranteeOf(slices, kind),
     rentCents: rentOf(slices),
@@ -339,7 +386,11 @@ function buildDraft(budget: ParsedBudget, slices: Slice[], texts: FixedTexts): B
 }
 
 /** Propone una B.E.O. por fecha y salón a partir del presupuesto ya leído. */
-export function proposeBeos(budget: ParsedBudget, texts: FixedTexts): BeoDraft[] {
+export function proposeBeos(
+  budget: ParsedBudget,
+  texts: FixedTexts,
+  settings: BeoSettings = defaultBeoSettings,
+): BeoDraft[] {
   const groups = new Map<string, Slice[]>();
   for (const slice of expand(budget)) {
     const key = `${slice.date}\u0000${slice.salon}`;
@@ -347,5 +398,5 @@ export function proposeBeos(budget: ParsedBudget, texts: FixedTexts): BeoDraft[]
     group.push(slice);
     groups.set(key, group);
   }
-  return [...groups.values()].map((slices) => buildDraft(budget, slices, texts));
+  return [...groups.values()].map((slices) => buildDraft(budget, slices, texts, settings));
 }

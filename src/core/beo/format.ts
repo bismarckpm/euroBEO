@@ -38,6 +38,8 @@ export function spanishWeekday(iso: string): string {
   return WEEKDAYS[date.getUTCDay()] ?? "Día";
 }
 
+const AMOUNT = /\d{1,3}(?:\.\d{3})*,\d{2}/g;
+
 /** Monto de céntimos como `1.234,56`. */
 export function formatCents(cents: number): string {
   const sign = cents < 0 ? "-" : "";
@@ -46,6 +48,18 @@ export function formatCents(cents: number): string {
   const fraction = String(absolute % 100).padStart(2, "0");
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   return `${sign}${grouped},${fraction}`;
+}
+
+/** Antepone USD a cada monto. El guion de cortesía no es un monto. */
+export function labelAmount(value: string): string {
+  const text = value.trim();
+  if (!text || text === "—" || text === "-") {
+    return text;
+  }
+  return text.replace(AMOUNT, (amount, offset: number) => {
+    const before = text.slice(Math.max(0, offset - 4), offset);
+    return /USD\s*$/i.test(before) ? amount : `USD ${amount}`;
+  });
 }
 
 /** Quita la palabra Salón y deja el nombre oficial. */
