@@ -62,6 +62,7 @@ describe("validación previa al render", () => {
     ]);
     const button = generateButtonState({ pendingCount: 0, issues });
     expect(button.disabled).toBe(true);
+    expect(button.messages.join(" ")).toContain("Falta clasificar");
     expect(button.messages.join(" ")).toContain("Cena de gala");
     expect(button.messages.join(" ")).toContain("Zafiro 23/10/2026");
     expect(generateButtonState({ pendingCount: 0, issues: [] }).disabled).toBe(false);

@@ -2,6 +2,7 @@ import { copyFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import PizZip from "pizzip";
 import { expect, type Page, test } from "@playwright/test";
 import { getPrisma } from "../src/lib/db";
 
@@ -110,6 +111,63 @@ test("valida, confirma la cartelera, ajusta un precio y llega a cero pendientes"
   await expect(page.getByTestId("generacion")).toContainText("Se inició la generación", { timeout: 120_000 });
   await expect(page.getByTestId("descargas")).toContainText("Descargar todo");
   await expect(page.getByTestId("descargas")).toContainText("B.E.O.");
+  } finally {
+    const created = await prisma.generatedDocument.findMany();
+    for (const row of created) {
+      if (existing.has(row.id)) continue;
+      await rm(row.docxPath, { force: true });
+      await rm(row.pdfPath, { force: true });
+      await prisma.generatedDocument.delete({ where: { id: row.id } });
+    }
+    if (before) {
+      await prisma.sequence.update({
+        where: { key: "beo" },
+        data: { lastNumber: before.lastNumber, year: before.year },
+      });
+    }
+  }
+});
+
+test("guarda el precio editado si se genera sin esperar el tabulador", async ({ page }) => {
+  test.setTimeout(300_000);
+  const prisma = getPrisma();
+  const before = await prisma.sequence.findUnique({ where: { key: "beo" } });
+  const existing = new Set((await prisma.generatedDocument.findMany({ select: { id: true } })).map((row) => row.id));
+  try {
+    await openReview(page);
+    const eventId = new URL(page.url()).pathname.split("/")[2] ?? "";
+    await page.getByLabel("Cartelera del evento").fill("CONGRESO NACIONAL DE REUMATOLOGÍA");
+    await page.getByRole("button", { name: "Confirmar datos del evento" }).click();
+    await expect(page.getByTestId("generacion")).toContainText("replicados");
+
+    const nav = page.getByTestId("beo-nav");
+    const total = await nav.count();
+    for (let index = 0; index < total; index += 1) {
+      await nav.nth(index).click();
+      await clearSelected(page);
+    }
+    await expect(page.getByTestId("pendientes-evento")).toHaveText("Sin pendientes");
+    await nav.first().click();
+    const price = page.getByLabel("Precio unitario").first();
+    await price.fill("41,00");
+    await page.getByTestId("confirmar-generar").click();
+    await expect(page.getByTestId("generacion")).toContainText("Se inició la generación", { timeout: 120_000 });
+
+    const saved = await prisma.beoLine.count({
+      where: { unitPriceCents: 4100, beo: { eventId } },
+    });
+    expect(saved).toBeGreaterThan(0);
+    const links = page.getByTestId("descargas").locator("a[href*='format=docx']");
+    const count = await links.count();
+    let printed = false;
+    for (let index = 0; index < count; index += 1) {
+      const href = await links.nth(index).getAttribute("href");
+      const downloaded = await page.request.get(href ?? "");
+      expect(downloaded.ok()).toBeTruthy();
+      const xml = new PizZip(await downloaded.body()).file("word/document.xml")?.asText() ?? "";
+      if (xml.replace(/<[^>]+>/g, "").includes("41,00")) printed = true;
+    }
+    expect(printed).toBe(true);
   } finally {
     const created = await prisma.generatedDocument.findMany();
     for (const row of created) {

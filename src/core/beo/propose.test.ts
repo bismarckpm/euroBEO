@@ -56,6 +56,28 @@ function budget(days: ParsedBudget["days"], title = "CONGRESO NACIONAL"): Parsed
   };
 }
 
+describe("garantía de montaje", () => {
+  it("deja vacía y en regla la garantía de un montaje sin pax", () => {
+    const drafts = proposeBeos(
+      budget([
+        {
+          dates: ["2026-10-22"],
+          raw: "22",
+          blocks: [block({ kind: "MONTAJE" })],
+        },
+      ]),
+      texts,
+    );
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({
+      kind: "MONTAJE",
+      salon: "Zafiro",
+      guarantee: { value: null, status: "RULE", source: "rule:rn-19" },
+      rentCents: { value: null, status: "RULE", source: "rule:rn-19" },
+    });
+  });
+});
+
 describe("clasificación frente a la IA", () => {
   it("no acepta la sección de la IA si el respaldo de CENA CONFERENCIA aplica", () => {
     const drafts = proposeBeos(

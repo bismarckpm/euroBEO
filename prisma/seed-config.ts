@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { existsSync } from "node:fs";
+import path from "node:path";
 import { normalizeLabel } from "../src/core/config/normalize";
 import {
   seedBlockHeaders,
@@ -108,6 +109,19 @@ async function seedMemo(): Promise<void> {
   }
 }
 
+async function seedTemplate(): Promise<void> {
+  const current = await prisma.template.findFirst({ where: { type: "beo", active: true } });
+  if (current) return;
+  await prisma.template.create({
+    data: {
+      type: "beo",
+      version: 1,
+      filePath: path.join(process.cwd(), "templates", "beo.docx"),
+      active: true,
+    },
+  });
+}
+
 async function seedBeoSequence(): Promise<void> {
   await prisma.sequence.upsert({
     where: { key: seedSequence.key },
@@ -122,6 +136,7 @@ async function main(): Promise<void> {
   await seedItems();
   await seedTexts();
   await seedMemo();
+  await seedTemplate();
   await seedBeoSequence();
   console.log("Configuración semilla lista.");
 }

@@ -51,6 +51,9 @@ export const seedSectionMappings: { header: string; section: BeoSection }[] = [
 
 export const seedCatalogItems: { description: string; category: string; section: BeoSection }[] = [
   { description: "Personal", category: "Personal", section: "PERSONAL" },
+  { description: "Supervisor", category: "Personal", section: "PERSONAL" },
+  { description: "Limpiador / Acomodador", category: "Personal", section: "PERSONAL" },
+  { description: "Oficial de seguridad", category: "Personal", section: "PERSONAL" },
   { description: "Filtros de agua", category: "Bebidas", section: "BEBIDAS" },
   { description: "Refrescos", category: "Bebidas", section: "BEBIDAS" },
   { description: "Agua mineral", category: "Bebidas", section: "BEBIDAS" },

@@ -86,6 +86,13 @@ describe("classifyCatalogItem", () => {
     expect(classifyCatalogItem("Filtros de agua", section, items)).toBe("BEBIDAS");
   });
 
+  it("clasifica oficios de personal aunque el bloque no traiga encabezado de sección", () => {
+    for (const description of ["Supervisor", "Limpiador / Acomodador", "Oficial de seguridad"]) {
+      const match = items.find((entry) => entry.normalized === normalizeLabel(description));
+      expect(match?.section).toBe("PERSONAL");
+    }
+  });
+
   it("deja el ítem en la sección del encabezado si no está en el catálogo", () => {
     expect(classifyCatalogItem("Menú ejecutivo", "ALIMENTOS", items)).toBe("ALIMENTOS");
   });
