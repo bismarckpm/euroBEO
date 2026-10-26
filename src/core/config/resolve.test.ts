@@ -68,6 +68,7 @@ describe("resolveSectionHeader", () => {
 
   it("mapea los encabezados reales del presupuesto", () => {
     expect(sectionOf("ALIMENTOS Y BEBIDAS")).toBe("ALIMENTOS");
+    expect(sectionOf("———— ALIMENTOS Y BEBIDAS")).toBe("ALIMENTOS");
     expect(sectionOf("SISTEMAS")).toBe("SISTEMAS");
     expect(sectionOf("DESCORCHE")).toBe("DESCORCHE");
     expect(sectionOf("ACCESO")).toBe("ACCESOS");

@@ -93,6 +93,20 @@ export const parsedBudgetSchema = z.object({
     lines: z.array(z.object({ description: z.string(), total: z.number().int() })),
     ok: z.boolean(),
   }),
+  origin: z.enum(["digital", "scan"]).default("digital"),
+  arithmetic: z
+    .array(
+      z.object({
+        equation: z.enum(["row", "subtotal", "iva", "total", "igtf"]),
+        cell: z.string(),
+        printed: z.number().int(),
+        calculated: z.number().int(),
+        difference: z.number().int(),
+        message: z.string(),
+        reviewed: z.boolean(),
+      }),
+    )
+    .default([]),
 });
 
 export type ParsedBudgetOutput = z.infer<typeof parsedBudgetSchema>;

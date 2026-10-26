@@ -28,7 +28,8 @@ import {
   type ParsedBudget,
   type ReconciliationLine,
 } from "./model";
-import { isCourtesyAmount, parseAmount, stripMoney } from "./money";
+import { verifyArithmetic } from "./arithmetic";
+import { isCourtesyAmount, lastAmount, parseAmount, stripMoney } from "./money";
 import { parsedBudgetSchema } from "./schema";
 
 export type BudgetCatalog = {
@@ -101,6 +102,14 @@ function isConfiguredBlockTitle(text: string, headers: BlockHeaderEntry[]): bool
   return Boolean(name) && headers.some((header) => header.normalized === name);
 }
 
+function isAreaLine(text: string): boolean {
+  const value = text.trim();
+  if (value.length > 80 || /\d,\d{2}/.test(value)) {
+    return false;
+  }
+  return /^hora\s*:/i.test(value) || /\bmontaje\s*:/i.test(value) || (/\bstand\b/i.test(value) && !/\d/.test(value));
+}
+
 function isBlockTitle(text: string, headers: BlockHeaderEntry[]): boolean {
   if (isConfiguredBlockTitle(text, headers)) {
     return true;
@@ -141,7 +150,7 @@ function totalsKey(
   if (/^sub total\b/.test(name)) {
     return "subtotal";
   }
-  if (/^iva\b/.test(name)) {
+  if (/^iva\b/.test(name) || /^\d+\s*%\s*iva\b/.test(name)) {
     return "iva";
   }
   if (/^logistica\b/.test(name)) {
@@ -166,10 +175,18 @@ function isSectionLine(line: TextLine, columns: ColumnBounds, text: string): boo
   const description = textInColumn(line, columns, "descripcion");
   const rate = textInColumn(line, columns, "tarifa");
   const total = textInColumn(line, columns, "total");
-  if (!description && (rate || total)) {
+  const name = normalizeLabel(text).replace(/^(?:[^\p{L}\p{N}]+|(?:es|o|e)\s+)+/u, "");
+  const titled =
+    !/\d/.test(text) &&
+    (isAllCaps(text) ||
+      /alimentos y bebidas/.test(name) ||
+      /^(personal|alimentos|bebidas|sistemas|descorche|accesos?|mobiliario|electricidad|habitacion|food|beverage|service|sunday|cena|salones)\b/.test(
+        name,
+      ));
+  // Un encabezado largo es un solo fragmento: el centro cae en Tarifa o Total.
+  if (!description && (rate || total) && !titled) {
     return false;
   }
-  const name = normalizeLabel(text);
   if (
     minX(line) > 210 &&
     /^(personal|alimentos|bebidas|sistemas|descorche|accesos?|mobiliario|electricidad|habitacion|food|beverage|service|sunday|cena|salones)\b/.test(
@@ -179,6 +196,9 @@ function isSectionLine(line: TextLine, columns: ColumnBounds, text: string): boo
     return true;
   }
   if (isAllCaps(text) && text.length < 80 && minX(line) > 220) {
+    return true;
+  }
+  if (name.length < 80 && minX(line) > 210 && (/alimentos y bebidas/.test(name) || /^personal\b/.test(name))) {
     return true;
   }
   const words = text.split(/\s+/).filter(Boolean);
@@ -873,11 +893,36 @@ export function parseBudget(
       mode = "totals";
       const key = totalsKey(lineText(line));
       const amount =
-        parseAmount(textInColumn(line, line.columns, "total")) ?? parseAmount(lineText(line));
+        parseAmount(textInColumn(line, line.columns, "total")) ?? lastAmount(lineText(line));
       if (key) {
         budget.totals[key] = amount;
       }
       continue;
+    }
+    if (line.kind === "text" && isAreaLine(lineText(line))) {
+      ensureBlock(line.page);
+      const area = lineText(line);
+      const block = cursor.block;
+      let applied = false;
+      if (block && /^hora\s*:/i.test(area) && !block.schedule.value) {
+        block.schedule = tracked(afterColon(area), "RULE");
+        applied = true;
+      } else if (
+        block &&
+        /\bmontaje\s*:/i.test(area) &&
+        !/^tipo de montaje\b/i.test(area) &&
+        !block.setup.value
+      ) {
+        const setup = afterColon(area);
+        block.setup = tracked(setup, /por definir|^\.\.\.$/i.test(setup) ? "PENDING" : "RULE");
+        applied = true;
+      } else if (block && /\bstand\b/i.test(area) && !block.salonRaw) {
+        block.salonRaw = cleanSalon(area);
+        applied = true;
+      }
+      if (applied) {
+        continue;
+      }
     }
     if (
       mode === "totals" ||
@@ -910,7 +955,15 @@ export function parseBudget(
     ensureBlock(line.page);
     const extras = attached.get(line) ?? [];
     const linesOfItem = descriptionLines(line, extras);
-    const description = linesOfItem.join("\n");
+    const description = linesOfItem
+      .filter((entry) => {
+        const value = entry.trim();
+        if (value.length > 80 || /\d,\d{2}/.test(value) || /^tipo de montaje\b/i.test(value)) {
+          return true;
+        }
+        return !(/\bmontaje\s*:/i.test(value) || (/\bstand\b/i.test(value) && !/\d/.test(value)));
+      })
+      .join("\n");
     const rate = columnBlob(line, extras, "tarifa");
     const totalText = columnBlob(line, extras, "total");
     const nights = integerIn(line, "noches") ?? 0;
@@ -975,5 +1028,7 @@ export function parseBudget(
   applyRules(budget, options.catalog);
   rememberClauses(budget, clauses, options.catalog?.keywords ?? options.keywords ?? []);
   reconcile(budget);
+  budget.origin = "digital";
+  budget.arithmetic = verifyArithmetic(budget);
   return parsedBudgetSchema.parse(budget);
 }

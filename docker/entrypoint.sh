@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+npx prisma generate
 npx prisma migrate deploy
 if [ "$#" -gt 0 ]; then
   exec "$@"

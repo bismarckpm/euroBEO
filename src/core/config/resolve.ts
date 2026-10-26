@@ -48,7 +48,7 @@ export function resolveSectionHeader(
   header: string,
   mappings: SectionMappingEntry[],
 ): SectionResolution {
-  const normalized = normalizeLabel(header);
+  const normalized = normalizeLabel(header).replace(/^[^\p{L}\p{N}]+/u, "").trim();
   const match = mappings.find((mapping) => mapping.normalized === normalized);
   if (!match) {
     return { status: "unresolved" };

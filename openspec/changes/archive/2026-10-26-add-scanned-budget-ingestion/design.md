@@ -12,7 +12,7 @@ Prueba de concepto sobre el escaneo de Calox (script de referencia en `docs/spik
 ## Goals / Non-Goals
 
 **Goals:**
-- Procesar escaneos de multifuncional con la misma confiabilidad numérica que un PDF digital, apoyándose en la verificación aritmética.
+- Procesar escaneos de multifuncional con la misma lectura numérica que un PDF digital, y avisar en la revisión cuando un monto no cuadra.
 - No enviar el documento a servicios externos.
 - Reutilizar el parser existente.
 
@@ -26,8 +26,8 @@ Prueba de concepto sobre el escaneo de Calox (script de referencia en `docs/spik
 - **Pipeline por página:** rasterizar a 300 dpi → enderezar (detección de orientación de Tesseract y ángulo de las líneas horizontales) → para fotos, detectar el contorno de la hoja y corregir la perspectiva → umbral adaptativo → detectar rejilla (aperturas morfológicas horizontales y verticales) → clasificar filas: con líneas verticales = filas de celdas; sin ellas = filas de ancho completo (fechas, encabezados de bloque y sección) → OCR por celda o por fila completa → fuera de la tabla, OCR por zonas de la plantilla (cabecera, datos del cliente, beneficios).
 - **Columnas numéricas** con lista blanca de dígitos y separadores; descripción y cabecera sin restricción.
 - **Mismo formato de salida que la lectura digital**, de modo que `src/core/budget` consuma un `TextSource` común (pdfjs u OCR).
-- **Verificación aritmética reforzada** (aplica también a PDF digitales): cantidad × tarifa × días = total por fila; suma de filas = subtotal; IVA = 16 % del subtotal; logística = 1 % de la base de alimentos y bebidas; total = subtotal + IVA + logística; IGTF = 3 % cuando existe. Tolerancia de 0,01. Si una única corrección de dígito hace cuadrar una ecuación, se propone como sugerencia, nunca se aplica sola.
-- **Estados:** todo campo leído por OCR entra como "validar" salvo números verificados por la aritmética, que quedan como confirmados por regla. Los campos de cabecera y cliente siempre quedan para validar.
+- **Alertas de montos** (digitales y escaneados): cantidad × tarifa × días = total por fila; suma de filas = subtotal; IVA = 16 % del subtotal; total = subtotal + IVA + logística impresa; IGTF = 3 % del total cuando existe. Tolerancia de 0,01. Cada diferencia es una alerta en la revisión con el impreso, el calculado y la diferencia. La asistente corrige el valor o la marca como revisada. Ninguna alerta bloquea la carga ni la generación. No se verifica la logística contra una base ni se sugiere un cambio de dígito. El cuadre de totales deja de pedir justificación y usa esta misma alerta.
+- **Estados:** todo campo leído por OCR entra como "validar" salvo los montos de fila que cuadran, que quedan como confirmados por regla. Los campos de cabecera y cliente siempre quedan para validar.
 - **Recortes para la revisión:** el servicio guarda la imagen de cada celda y fila; la revisión muestra el recorte junto al campo.
 - **Calidad mínima:** se rechaza con mensaje claro una página con resolución efectiva menor a 150 dpi o sin rejilla de tabla detectable.
 - **Manuscritos:** se detectan como trazos fuera de la rejilla con baja confianza de OCR y generan una advertencia; no se leen.
@@ -35,6 +35,6 @@ Prueba de concepto sobre el escaneo de Calox (script de referencia en `docs/spik
 
 ## Risks / Trade-offs
 
-- Fotos de celular con sombras o curvatura pueden no detectar la rejilla. Mitigación: tareas de fotos condicionadas a muestras reales; si la rejilla no se detecta, rechazo con mensaje claro.
+- Fotos de celular con sombras o curvatura pueden no detectar la rejilla. La corrección de perspectiva se implementa y se prueba con deformaciones sintéticas del escaneo; no valida fotos reales. La medición y el ajuste con muestras reales quedan en el change `validate-phone-photo-ingestion`. Si la rejilla no se detecta, se rechaza con un mensaje claro.
 - La imagen Docker crece por OpenCV y Tesseract (~300 MB). Aceptable para despliegue local.
 - Un error del OCR que casualmente cuadre la aritmética es muy improbable, pero posible; la revisión con recorte lo mitiga.

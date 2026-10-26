@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   addBeoLine,
+  acknowledgeStoredAmountAlert,
   confirmMemoField,
+  correctStoredAmountAlert,
   deleteBeoLine,
   editMemoField,
   getEventReview,
@@ -17,8 +19,10 @@ import {
   voidBeo,
   updateBeoField,
   updateBeoLine,
+  updateOcrField,
   updateSharedField,
   validateBeoField,
+  validateOcrField,
 } from "@/lib/event-review";
 
 const bodySchema = z.discriminatedUnion("action", [
@@ -108,6 +112,26 @@ const bodySchema = z.discriminatedUnion("action", [
     beoIds: z.array(z.string()).default([]),
     memoIds: z.array(z.string()).default([]),
   }),
+  z.object({
+    action: z.literal("edit-ocr-field"),
+    key: z.string().min(1),
+    value: z.string(),
+  }),
+  z.object({
+    action: z.literal("validate-ocr-field"),
+    key: z.string().min(1),
+  }),
+  z.object({
+    action: z.literal("correct-amount-alert"),
+    equation: z.enum(["row", "subtotal", "iva", "total", "igtf"]),
+    cell: z.string().min(1),
+    value: z.string(),
+  }),
+  z.object({
+    action: z.literal("review-amount-alert"),
+    equation: z.enum(["row", "subtotal", "iva", "total", "igtf"]),
+    cell: z.string().min(1),
+  }),
 ]);
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -188,5 +212,13 @@ async function applyAction(eventId: string, body: z.infer<typeof bodySchema>) {
       return voidBeo(eventId, body.beoId);
     case "regenerate-selected":
       return regenerateSelected(eventId, { beoIds: body.beoIds, memoIds: body.memoIds });
+    case "edit-ocr-field":
+      return updateOcrField(eventId, body.key, body.value);
+    case "validate-ocr-field":
+      return validateOcrField(eventId, body.key);
+    case "correct-amount-alert":
+      return correctStoredAmountAlert(eventId, body.equation, body.cell, body.value);
+    case "review-amount-alert":
+      return acknowledgeStoredAmountAlert(eventId, body.equation, body.cell);
   }
 }

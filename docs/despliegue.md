@@ -8,6 +8,7 @@ Checklist del entorno del hotel. No forma parte de la suite automática.
 - [ ] Las variables de entorno (`DATABASE_URL`, `SESSION_SECRET`, Drive y la clave de IA si se usa) están fuera del código.
 - [ ] LibreOffice en el contenedor es 7.4.7.2 40(Build:2) y `pdftoppm` está disponible. Con esa versión se aprobaron las líneas base. Si se actualiza LibreOffice, hay que regenerarlas y aprobarlas en el mismo cambio.
 - [ ] La carpeta de Google Drive del año en curso es la que usa la asistente.
+- [ ] Lectura de fotos de celular implementada pero no validada con fotos reales; pendiente del change validate-phone-photo-ingestion.
 
 ## Líneas base visuales
 

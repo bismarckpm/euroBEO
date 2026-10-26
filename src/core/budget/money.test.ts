@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAmount } from "./money";
+import { lastAmount, parseAmount } from "./money";
 
 describe("parseAmount", () => {
   it("lee montos europeos, estadounidenses y decorativos como céntimos positivos", () => {
@@ -13,5 +13,7 @@ describe("parseAmount", () => {
     expect(parseAmount("CORTESÍA")).toBeNull();
     expect(parseAmount("Incluido en el evento")).toBeNull();
     expect(parseAmount("-")).toBeNull();
+    expect(lastAmount("16% IVA 2.869,57")).toBe(286957);
+    expect(lastAmount("IVA (16%) ( 591,16)")).toBe(59116);
   });
 });

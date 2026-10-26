@@ -367,6 +367,13 @@ td {
   background: #f8e4e2;
 }
 
+.ocr-crop {
+  display: block;
+  max-width: 240px;
+  max-height: 72px;
+  object-fit: contain;
+}
+
 .badge {
   margin-left: 0.4rem;
   font-style: normal;

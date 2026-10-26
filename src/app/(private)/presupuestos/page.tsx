@@ -5,8 +5,8 @@ export default function PresupuestosPage() {
     <main className="panel">
       <h1>Presupuesto</h1>
       <p className="lede">
-        Sube el PDF digital del presupuesto. Un archivo escaneado, sin capa de texto, no se puede
-        leer.
+        Sube el PDF del presupuesto, digital o escaneado. Si es un escaneo, los datos quedan para
+        validar.
       </p>
       <BudgetUpload />
     </main>

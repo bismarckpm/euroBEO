@@ -73,6 +73,7 @@ function badge(status: string): string {
   if (status === "AI") return "IA";
   if (status === "PENDING") return "Pendiente";
   if (status === "REVIEW") return "Revisar";
+  if (status === "VALIDATE") return "Validar";
   return "";
 }
 
@@ -104,8 +105,45 @@ function driveLabel(status: string | undefined): string {
 
 function tone(status: string): string {
   if (status === "AI") return "field-ai";
-  if (status === "PENDING" || status === "REVIEW") return "field-pending";
+  if (status === "PENDING" || status === "REVIEW" || status === "VALIDATE") return "field-pending";
   return "field-rule";
+}
+
+function AmountAlert({
+  issue,
+  onCorrect,
+  onReview,
+}: {
+  issue: EventReview["arithmetic"][number];
+  onCorrect: (value: string) => void;
+  onReview: () => void;
+}) {
+  const [value, setValue] = useState(formatAmount(issue.printed));
+  return (
+    <div data-testid="alerta-monto">
+      <p className="alert">{issue.message}</p>
+      {issue.reviewed ? (
+        <p>Revisada</p>
+      ) : (
+        <div className="form-inline">
+          <label>
+            Valor
+            <input
+              aria-label={`Valor de ${issue.cell}`}
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+            />
+          </label>
+          <button type="button" onClick={() => onCorrect(value)}>
+            Corregir
+          </button>
+          <button type="button" onClick={onReview}>
+            Revisada
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ReviewScreen({ initial }: { initial: EventReview }) {
@@ -248,6 +286,14 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
     setBusy(true);
     await whenSavesFinish();
     await send({ action: "generate", numbers, acknowledge });
+  }
+
+  async function saveOcr(key: string, value: string) {
+    await send({ action: "edit-ocr-field", key, value });
+  }
+
+  async function confirmOcr(key: string) {
+    await send({ action: "validate-ocr-field", key });
   }
 
   async function confirmShared() {
@@ -456,6 +502,76 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
             </div>
           ) : null}
           <a href={`/api/events/${review.eventId}/documents/archive`}>Descargar todo</a>
+        </section>
+      ) : null}
+
+      {review.arithmetic.length > 0 ? (
+        <section data-testid="alertas-montos">
+          <h2>Alertas de montos</h2>
+          {review.arithmetic.map((issue) => (
+            <AmountAlert
+              key={`${issue.equation}-${issue.cell}-${issue.printed}-${issue.reviewed}`}
+              issue={issue}
+              onCorrect={(value) =>
+                void send({ action: "correct-amount-alert", equation: issue.equation, cell: issue.cell, value })
+              }
+              onReview={() => void send({ action: "review-amount-alert", equation: issue.equation, cell: issue.cell })}
+            />
+          ))}
+        </section>
+      ) : null}
+
+      {review.ocrFields.length > 0 ? (
+        <section data-testid="lectura-escaneo">
+          <h2>Lectura del escaneo</h2>
+          {review.handwriting.map((note) => (
+            <p key={note.cropId} data-testid="manuscrito">
+              {note.message}
+              <img
+                className="ocr-crop"
+                src={`/api/events/${review.eventId}/crops/${note.cropId}`}
+                alt="Recorte manuscrito"
+              />
+            </p>
+          ))}
+          {review.ocrFields.map((field) => {
+            const open = field.status !== "RULE";
+            return (
+              <label
+                key={field.key}
+                className={`review-field ${open ? "field-pending" : "field-rule"}`}
+                data-testid={open ? "campo-abierto" : "campo"}
+              >
+                <span>
+                  {field.label}
+                  {open ? <em className="badge">Validar</em> : null}
+                </span>
+                {field.amountVerified ? <small>Monto verificado</small> : null}
+                {field.cropId ? (
+                  <img
+                    className="ocr-crop"
+                    src={`/api/events/${review.eventId}/crops/${field.cropId}`}
+                    alt=""
+                  />
+                ) : null}
+                <input
+                  aria-label={field.label}
+                  defaultValue={field.value}
+                  key={`${field.key}-${field.value}-${field.status}`}
+                  onBlur={(event) => void saveOcr(field.key, event.target.value)}
+                />
+                {open ? (
+                  <button
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => void confirmOcr(field.key)}
+                  >
+                    Validar
+                  </button>
+                ) : null}
+              </label>
+            );
+          })}
         </section>
       ) : null}
 
@@ -743,7 +859,7 @@ function MemoView({
                 onBlur={(event) => onField(field.key, event.target.value)}
               />
             )}
-            {field.status === "AI" || field.status === "REVIEW" ? (
+            {field.status === "AI" || field.status === "REVIEW" || field.status === "VALIDATE" ? (
               <button
                 type="button"
                 onMouseDown={(event) => event.preventDefault()}
@@ -979,7 +1095,7 @@ function FieldBox({
         key={`${field.id}-${field.value}-${field.status}`}
         onBlur={(event) => onSave(field.key, event.target.value, remember)}
       />
-      {field.status === "AI" || field.status === "REVIEW" ? (
+      {field.status === "AI" || field.status === "REVIEW" || field.status === "VALIDATE" ? (
         <button
           type="button"
           onMouseDown={(event) => event.preventDefault()}

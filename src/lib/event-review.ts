@@ -1,4 +1,9 @@
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
+import { acknowledgeAmountAlert, correctAmountAlert } from "../core/budget/arithmetic";
+import type { ArithmeticEquation } from "../core/budget/model";
 import { formatCents, personnelLine } from "../core/beo/format";
+import type { HandwritingNote, OcrReviewField } from "../core/budget/ocr-review";
 import { recordAudit, type JsonValue } from "./audit";
 import { createBeoProposal } from "./beo-store";
 import { listMemos } from "./catalog-db";
@@ -15,7 +20,7 @@ import {
 } from "./event-memos";
 import { NormalizationInputError, saveLearnedNormalization } from "./normalization";
 
-const OPEN_STATUS = new Set(["PENDING", "AI", "REVIEW"]);
+const OPEN_STATUS = new Set(["PENDING", "AI", "REVIEW", "VALIDATE"]);
 const SHARED_KEYS = ["billboard", "company", "contact", "phone"] as const;
 const KIND_ORDER: Record<string, number> = { MONTAJE: 0, EVENTO: 1, DESMONTAJE: 2 };
 
@@ -70,11 +75,59 @@ export type EventReview = {
   pendingCount: number;
   issues: BeoIssue[];
   goldenCandidate: boolean;
+  origin: string;
+  ocrFields: OcrReviewField[];
+  handwriting: HandwritingNote[];
+  arithmetic: {
+    equation: ArithmeticEquation;
+    cell: string;
+    printed: number;
+    calculated: number;
+    difference: number;
+    message: string;
+    reviewed: boolean;
+  }[];
   shared: Record<(typeof SHARED_KEYS)[number], string | null>;
   beos: ReviewBeo[];
   memos: ReviewMemo[];
   memoTypes: { id: string; name: string }[];
 };
+
+const ocrFieldSchema = z.array(
+  z.object({
+    key: z.string(),
+    label: z.string(),
+    value: z.string(),
+    status: z.enum(["VALIDATE", "RULE"]),
+    cropId: z.string().nullable(),
+    amountVerified: z.boolean(),
+  }),
+);
+
+const handwritingSchema = z.array(
+  z.object({
+    cropId: z.string(),
+    page: z.number().int(),
+    message: z.string(),
+  }),
+);
+
+const arithmeticSchema = z.array(
+  z.object({
+    equation: z.enum(["row", "subtotal", "iva", "total", "igtf"]),
+    cell: z.string(),
+    printed: z.number().int(),
+    calculated: z.number().int(),
+    difference: z.number().int(),
+    message: z.string(),
+    reviewed: z.boolean(),
+  }),
+);
+
+function readJson<T>(schema: z.ZodType<T>, value: unknown, fallback: T): T {
+  const parsed = schema.safeParse(value);
+  return parsed.success ? parsed.data : fallback;
+}
 
 function isOpen(status: string): boolean {
   return OPEN_STATUS.has(status);
@@ -194,12 +247,21 @@ function toReview(
   }
 
   const active = beos.filter((beo) => beo.status !== "voided");
+  const latest = event.budgets[0];
+  const ocrFields = readJson(ocrFieldSchema, latest?.ocrReview, []);
+  const handwriting = readJson(handwritingSchema, latest?.handwriting, []);
+  const arithmetic = readJson(arithmeticSchema, latest?.arithmetic, []);
   return {
     eventId: event.id,
     title: event.title,
+    origin: event.origin,
+    ocrFields,
+    handwriting,
+    arithmetic,
     pendingCount:
       active.reduce((sum, beo) => sum + beo.pendingCount, 0) +
-      memos.reduce((sum, memo) => sum + memo.pendingCount, 0),
+      memos.reduce((sum, memo) => sum + memo.pendingCount, 0) +
+      ocrFields.filter((field) => field.status !== "RULE").length,
     issues: active.flatMap((beo) =>
       validateBeoLines(`${beo.salon} ${beo.date}`, beo.lines),
     ),
@@ -632,6 +694,125 @@ export async function splitBeo(input: {
     after: jsonValue({ salon, lines: moving.length }),
   });
   return getEventReview(input.eventId);
+}
+
+async function saveOcrFields(eventId: string, fields: OcrReviewField[]) {
+  const event = await loadEvent(eventId);
+  const budget = event.budgets[0];
+  if (!budget) {
+    throw new ReviewError("El evento no tiene presupuesto.", 404);
+  }
+  await getPrisma().budget.update({
+    where: { id: budget.id },
+    data: { ocrReview: fields as Prisma.InputJsonValue },
+  });
+}
+
+/** Corrige un dato leído del escaneo. Sigue en validar hasta que se confirme. */
+export async function updateOcrField(eventId: string, key: string, value: string) {
+  const event = await loadEvent(eventId);
+  const fields = readJson(ocrFieldSchema, event.budgets[0]?.ocrReview, []).map((field) =>
+    field.key === key
+      ? { ...field, value, status: field.value === value ? field.status : ("VALIDATE" as const) }
+      : field,
+  );
+  await saveOcrFields(eventId, fields);
+  if (key === "company") {
+    await getPrisma().event.update({ where: { id: eventId }, data: { company: value } });
+  }
+  if (key === "eventTitle") {
+    await getPrisma().event.update({ where: { id: eventId }, data: { title: value } });
+  }
+  await recordAudit({
+    action: "ocr.edit",
+    entity: "Budget",
+    entityId: event.budgets[0]?.id ?? eventId,
+    after: jsonValue({ key, value }),
+  });
+  return getEventReview(eventId);
+}
+
+/** Confirma un dato del escaneo. */
+export async function validateOcrField(eventId: string, key: string) {
+  const event = await loadEvent(eventId);
+  const fields = readJson(ocrFieldSchema, event.budgets[0]?.ocrReview, []);
+  const current = fields.find((field) => field.key === key);
+  if (!current?.value.trim()) {
+    throw new ReviewError("El campo no tiene valor para validar.", 400);
+  }
+  await saveOcrFields(
+    eventId,
+    fields.map((field) => (field.key === key ? { ...field, status: "RULE" as const } : field)),
+  );
+  return getEventReview(eventId);
+}
+
+async function storedAlerts(eventId: string) {
+  const event = await loadEvent(eventId);
+  const budget = event.budgets[0];
+  if (!budget) {
+    throw new ReviewError("El evento no tiene presupuesto.", 404);
+  }
+  return { budget, alerts: readJson(arithmeticSchema, budget.arithmetic, []) };
+}
+
+/** La asistente sustituye el monto impreso de una alerta. */
+export async function correctStoredAmountAlert(eventId: string, equation: ArithmeticEquation, cell: string, value: string) {
+  const printed = parseAmount(value);
+  if (printed === null) {
+    throw new ReviewError("El monto no es válido.", 400);
+  }
+  const { budget, alerts } = await storedAlerts(eventId);
+  const current = alerts.find((alert) => alert.equation === equation && alert.cell === cell);
+  if (!current) {
+    throw new ReviewError("No se encontró la alerta.", 404);
+  }
+  const next = correctAmountAlert(alerts, equation, cell, printed);
+  await getPrisma().budget.update({
+    where: { id: budget.id },
+    data: {
+      arithmetic: next as Prisma.InputJsonValue,
+      ...(equation === "subtotal" ? { subtotalCents: printed } : {}),
+    },
+  });
+  if (equation === "row") {
+    await getPrisma().budgetItem.updateMany({
+      where: {
+        totalCents: current.printed,
+        description: { startsWith: cell },
+        block: { day: { budgetId: budget.id } },
+      },
+      data: { totalCents: printed },
+    });
+  }
+  await recordAudit({
+    action: "budget.amount.correct",
+    entity: "Budget",
+    entityId: budget.id,
+    before: jsonValue(current),
+    after: jsonValue({ equation, cell, printed }),
+  });
+  return getEventReview(eventId);
+}
+
+/** La asistente deja la alerta como revisada, sin cambiar el monto. */
+export async function acknowledgeStoredAmountAlert(eventId: string, equation: ArithmeticEquation, cell: string) {
+  const { budget, alerts } = await storedAlerts(eventId);
+  if (!alerts.some((alert) => alert.equation === equation && alert.cell === cell)) {
+    throw new ReviewError("No se encontró la alerta.", 404);
+  }
+  const next = acknowledgeAmountAlert(alerts, equation, cell);
+  await getPrisma().budget.update({
+    where: { id: budget.id },
+    data: { arithmetic: next as Prisma.InputJsonValue },
+  });
+  await recordAudit({
+    action: "budget.amount.review",
+    entity: "Budget",
+    entityId: budget.id,
+    after: jsonValue({ equation, cell, reviewed: true }),
+  });
+  return getEventReview(eventId);
 }
 
 /** Genera las B.E.O. del evento cuando ya no quedan pendientes. */
