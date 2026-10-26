@@ -15,6 +15,16 @@ services:
       timeout: 5s
       retries: 20
 
+  ocr:
+    build: ./services/ocr
+    environment:
+      TESSDATA_PREFIX: /usr/share/tesseract-ocr/5/tessdata
+    # Sin publicación de puertos: solo lo alcanza la app en la red interna.
+    # El código se monta para probar el pipeline sin reconstruir la imagen.
+    # spa.traineddata sigue horneado en la imagen.
+    volumes:
+      - ./services/ocr/app:/app/app
+
   app:
     build: .
     ports:
@@ -25,15 +35,19 @@ services:
       DATABASE_URL: postgresql://eurobeo:eurobeo@db:5432/eurobeo
       PORT: "3000"
       EUROBEO_CONTAINER: "1"
+      OCR_URL: http://ocr:8000
     depends_on:
       db:
         condition: service_healthy
+      ocr:
+        condition: service_started
     volumes:
       - ./src:/app/src
       - ./e2e:/app/e2e
       - ./fixtures:/app/fixtures
       - ./templates:/app/templates
       - ./prisma:/app/prisma
+      - ./docker/entrypoint.sh:/entrypoint.sh:ro
       - ./scripts:/app/scripts
       - ./public:/app/public
       - ./tsconfig.json:/app/tsconfig.json

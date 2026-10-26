@@ -110,6 +110,8 @@ model Event {
   title     String
   company   String
   locator   String
+  /// digital o scan. Un escaneo pasa a digital cuando el PDF digital coincide.
+  origin    String   @default("digital")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   budgets   Budget[]
@@ -131,6 +133,8 @@ model Budget {
   version         Int
   fileName        String
   originalPdf     Bytes
+  /// digital o scan, según el PDF de esta versión.
+  source          String          @default("digital")
   status          String
   justification   String?
   subtotalCents   Int?
@@ -139,6 +143,9 @@ model Budget {
   warnings        String[]
   triggers        String[] @default([])
   structureErrors Json
+  arithmetic      Json            @default("[]")
+  ocrReview       Json            @default("[]")
+  handwriting     Json            @default("[]")
   createdAt       DateTime        @default(now())
   days            BudgetDay[]
   benefits        BudgetBenefit[]

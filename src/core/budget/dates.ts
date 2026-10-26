@@ -95,6 +95,12 @@ export function parseDateList(input: string, fallbackYear?: number): string[] | 
     /^(?:del\s+)?(\d{1,2})(?:\s+(y|al)\s+(\d{1,2}))?\s+de\s+([a-z]+)(?:\s+de\s+(\d{4}))?$/,
   );
   if (!spanish) {
+    const embedded = text.match(
+      /(\d{1,2}(?:\s+(?:y|al)\s+\d{1,2})?\s+de\s+[a-z]+(?:\s+de\s+\d{4})?)/,
+    );
+    if (embedded && embedded[1].length >= text.length * 0.45) {
+      return parseDateList(embedded[1], fallbackYear);
+    }
     return null;
   }
 

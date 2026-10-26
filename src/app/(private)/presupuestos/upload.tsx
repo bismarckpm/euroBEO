@@ -8,26 +8,24 @@ import { formatAmount } from "@/lib/format";
 type UploadResponse = BudgetUploadView & {
   saved?: boolean;
   duplicate?: boolean;
-  needsJustification?: boolean;
   message?: string;
   version?: number;
   eventId?: string;
+  origin?: string;
+  differences?: { field: string; before: string; after: string }[];
+  arithmetic?: { equation: string; cell: string; message: string }[];
 };
 
 export function BudgetUpload() {
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<UploadResponse | null>(null);
-  const [justification, setJustification] = useState("");
   const [pending, setPending] = useState(false);
 
-  async function send(selected: File, options: { newVersion?: boolean; justification?: string }) {
+  async function send(selected: File, options: { newVersion?: boolean }) {
     const data = new FormData();
     data.set("file", selected);
     if (options.newVersion) {
       data.set("newVersion", "1");
-    }
-    if (options.justification) {
-      data.set("justification", options.justification);
     }
     setPending(true);
     try {
@@ -73,7 +71,26 @@ export function BudgetUpload() {
       </button>
 
       {result?.message ? (
-        <p className={result.saved ? "notice" : "alert"}>{result.message}</p>
+        <p className={result.saved ? "notice" : "alert"} data-testid="mensaje-presupuesto">
+          {result.message}
+        </p>
+      ) : null}
+      {result?.origin === "escaneo" ? <p data-testid="origen-escaneo">Origen: escaneo</p> : null}
+      {result?.arithmetic && result.arithmetic.length > 0 ? (
+        <ul data-testid="aritmetica">
+          {result.arithmetic.map((issue) => (
+            <li key={`${issue.equation}-${issue.cell}`}>{issue.message}</li>
+          ))}
+        </ul>
+      ) : null}
+      {result?.differences && result.differences.length > 0 ? (
+        <ul data-testid="diferencias-escaneo">
+          {result.differences.map((difference) => (
+            <li key={difference.field}>
+              {difference.field}: {difference.before} → {difference.after}
+            </li>
+          ))}
+        </ul>
       ) : null}
 
       {result?.duplicate ? (
@@ -96,36 +113,7 @@ export function BudgetUpload() {
         </ul>
       ) : null}
 
-      {result?.needsJustification ? (
-        <label>
-          Justificación de la diferencia
-          <textarea
-            value={justification}
-            onChange={(event) => setJustification(event.target.value)}
-          />
-          <button
-            type="button"
-            disabled={pending || justification.trim().length === 0}
-            onClick={() => file && void send(file, { justification })}
-          >
-            Justificar y continuar
-          </button>
-        </label>
-      ) : null}
-
-      {result?.reconciliation &&
-      !result.reconciliation.ok &&
-      result.reconciliation.difference !== null ? (
-        <p>
-          Suma leída {formatAmount(result.reconciliation.actual)}. Subtotal{" "}
-          {result.reconciliation.expected === null
-            ? "—"
-            : formatAmount(result.reconciliation.expected)}
-          . Diferencia {formatAmount(result.reconciliation.difference)}.
-        </p>
-      ) : null}
-
-      {result?.company || result?.title ? (
+      {result?.company || result?.title || result?.saved ? (
         <section data-testid="resumen">
           <h2>Resumen</h2>
           <p>

@@ -42,6 +42,13 @@ export function parseAmount(raw: string): number | null {
   return Number.isInteger(cents) ? cents : null;
 }
 
+/** Último monto con decimales. Ignora un porcentaje que antecede al importe. */
+export function lastAmount(raw: string): number | null {
+  const matches = raw.match(/\d{1,3}(?:\.\d{3})+,\d{2}|\d+,\d{2}/g);
+  const last = matches?.at(-1);
+  return last ? parseAmount(last) : null;
+}
+
 /** Quita montos con separador y deja el texto del descuento. */
 export function stripMoney(raw: string): string {
   return raw

@@ -1,4 +1,8 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { Prisma } from "@prisma/client";
+import type { HandwritingNote, OcrReviewField } from "../core/budget/ocr-review";
+import type { OcrCrop } from "../core/budget/ocr-source";
 import type { ParsedBudget } from "../core/budget/model";
 import type { BudgetBlock } from "../core/budget/model";
 import { recordAudit } from "./audit";
@@ -37,12 +41,33 @@ function itemRows(block: BudgetBlock) {
 }
 
 /** Guarda el PDF y el modelo leído. Si el localizador y el cliente ya existen, exige confirmar la versión. */
+export function cropFile(budgetId: string, cropId: string): string {
+  if (!/^[\w.-]+$/.test(cropId) || !/^[\w-]+$/.test(budgetId)) {
+    throw new Error("El recorte no es válido.");
+  }
+  return path.join(process.cwd(), "data", "ocr", budgetId, `${cropId}.png`);
+}
+
+export async function writeCrops(budgetId: string, crops: OcrCrop[]): Promise<void> {
+  if (crops.length === 0) {
+    return;
+  }
+  const directory = path.join(process.cwd(), "data", "ocr", budgetId);
+  await mkdir(directory, { recursive: true });
+  await Promise.all(
+    crops.map((crop) => writeFile(cropFile(budgetId, crop.id), Buffer.from(crop.pngBase64, "base64"))),
+  );
+}
+
 export async function saveBudget(input: {
   budget: ParsedBudget;
   pdf: Uint8Array;
   fileName: string;
   newVersion: boolean;
   justification: string | null;
+  crops?: OcrCrop[];
+  ocrFields?: OcrReviewField[];
+  handwriting?: HandwritingNote[];
 }) {
   const prisma = getPrisma();
   const company = input.budget.client.company ?? "";
@@ -59,7 +84,7 @@ export async function saveBudget(input: {
     throw new DuplicateBudgetError(existing.eventId);
   }
 
-  const status = input.budget.reconciliation.ok ? "ready" : "justified";
+  const status = "ready";
   const saved = await prisma.$transaction(async (tx) => {
     const event = existing
       ? await tx.event.update({
@@ -71,6 +96,7 @@ export async function saveBudget(input: {
             title: input.budget.eventTitle ?? "Evento",
             company,
             locator,
+            origin: input.budget.origin ?? "digital",
           },
         });
 
@@ -80,6 +106,7 @@ export async function saveBudget(input: {
         version: existing ? existing.version + 1 : 1,
         fileName: input.fileName,
         originalPdf: new Uint8Array(input.pdf),
+        source: input.budget.origin ?? "digital",
         status,
         justification: input.justification,
         subtotalCents: input.budget.totals.subtotal,
@@ -88,6 +115,9 @@ export async function saveBudget(input: {
         warnings: input.budget.warnings,
         triggers: input.budget.triggers,
         structureErrors: input.budget.structureErrors as Prisma.InputJsonValue,
+        arithmetic: (input.budget.arithmetic ?? []) as Prisma.InputJsonValue,
+        ocrReview: (input.ocrFields ?? []) as Prisma.InputJsonValue,
+        handwriting: (input.handwriting ?? []) as Prisma.InputJsonValue,
         benefits: {
           create: input.budget.benefits.map((text, position) => ({ position, text })),
         },
@@ -124,6 +154,8 @@ export async function saveBudget(input: {
       },
     });
   });
+
+  await writeCrops(saved.id, input.crops ?? []);
 
   await recordAudit({
     action: "budget.upload",

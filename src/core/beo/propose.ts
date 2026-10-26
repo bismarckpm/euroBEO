@@ -31,7 +31,10 @@ function field<T>(value: T, status: BeoFieldStatus, source: string): BeoField<T>
   return { value, status, source };
 }
 
-function clientField(value: string | null, source: string): BeoField<string | null> {
+function clientField(value: string | null, source: string, origin?: string): BeoField<string | null> {
+  if (origin === "scan") {
+    return field(value, "VALIDATE", source);
+  }
   return field(value, value ? "RULE" : "PENDING", source);
 }
 
@@ -215,6 +218,13 @@ function unitPrice(item: BudgetItem): number | null {
   return null;
 }
 
+function scanLineStatus(status: BeoFieldStatus, item: BudgetItem, origin?: string): BeoFieldStatus {
+  if (origin !== "scan" || item.flags.includes("verified")) {
+    return status;
+  }
+  return "VALIDATE";
+}
+
 function toLine(
   item: BudgetItem,
   section: BudgetSection,
@@ -222,12 +232,13 @@ function toLine(
   resolved: string,
   review: boolean,
   settings: BeoSettings,
+  origin?: string,
 ): BeoLine {
   const price = unitPrice(item);
   const description = resolved === "ALIMENTOS" ? item.description.trim() : oneLine(item.description);
   const marks = item.flags.filter((flag) => flag === "AM" || flag === "PM");
   const marked = marks.length > 0 ? `${description} ${marks.join(" ")}` : description;
-  const status = review ? "REVIEW" : lineStatus(item, section);
+  const status = scanLineStatus(review ? "REVIEW" : lineStatus(item, section), item, origin);
   if (resolved === "ALIMENTOS") {
     const food = structureFood({
       description: marked,
@@ -266,6 +277,7 @@ function toLine(
 function collectLines(
   slices: Slice[],
   settings: BeoSettings,
+  origin?: string,
 ): { food: BeoLine[]; sections: BeoDraft["sections"] } {
   const food: BeoLine[] = [];
   const bySection = new Map<string, BeoLine[]>();
@@ -274,7 +286,7 @@ function collectLines(
       for (const item of section.items) {
         const resolved = resolveSection(item, section);
         if (!resolved.section) {
-          const pending = toLine(item, section, slice.block, "ALIMENTOS", true, settings);
+          const pending = toLine(item, section, slice.block, "ALIMENTOS", true, settings, origin);
           pending.section = "";
           pending.status = "PENDING";
           pending.text = oneLine(item.description);
@@ -283,7 +295,7 @@ function collectLines(
           bySection.set("", bucket);
           continue;
         }
-        const line = toLine(item, section, slice.block, resolved.section, resolved.review, settings);
+        const line = toLine(item, section, slice.block, resolved.section, resolved.review, settings, origin);
         if (resolved.section === "ALIMENTOS") {
           food.push(line);
           continue;
@@ -338,7 +350,7 @@ function buildDraft(
   const schedule = firstText(schedulePool.length > 0 ? schedulePool : slices, (block) => block.schedule);
   const setupPool = slices.filter((slice) => slice.block.kind === "MONTAJE");
   const setup = firstText(setupPool.length > 0 ? setupPool : slices, (block) => block.setup);
-  const lines = collectLines(slices, settings);
+  const lines = collectLines(slices, settings, budget.origin);
   const title = budget.eventTitle ?? "";
   const hasService = lines.sections.some(
     (section) =>
@@ -353,10 +365,10 @@ function buildDraft(
     salon,
     kind,
     needsReview: slices.some((slice) => slice.needsReview),
-    company: clientField(budget.client.company, "budget.client.company"),
-    contact: clientField(budget.client.contact, "budget.client.contact"),
-    phone: clientField(budget.client.phones, "budget.client.phone"),
-    address: clientField(budget.client.address, "budget.client.address"),
+    company: clientField(budget.client.company, "budget.client.company", budget.origin),
+    contact: clientField(budget.client.contact, "budget.client.contact", budget.origin),
+    phone: clientField(budget.client.phones, "budget.client.phone", budget.origin),
+    address: clientField(budget.client.address, "budget.client.address", budget.origin),
     weekday: field(
       settings.presentation.uppercaseDayAndContact ? weekday.toUpperCase() : weekday,
       "RULE",

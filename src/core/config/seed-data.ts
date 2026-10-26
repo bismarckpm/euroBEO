@@ -34,6 +34,7 @@ export const seedSectionMappings: { header: string; section: BeoSection }[] = [
   { header: "PERSONAL EVENTO", section: "PERSONAL" },
   { header: "PERSONAL PARA EL SERVICIO", section: "PERSONAL" },
   { header: "PERSONAL PARA EL SERVICIO DE COMIDAS", section: "PERSONAL" },
+  { header: "PERSONAL PARA EL MONTAJE - DESMONTAJE", section: "PERSONAL" },
   { header: "ALIMENTOS", section: "ALIMENTOS" },
   { header: "ALIMENTOS Y BEBIDAS", section: "ALIMENTOS" },
   { header: "CENA CONFERENCIA", section: "ALIMENTOS" },

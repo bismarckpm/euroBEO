@@ -98,6 +98,18 @@ export type Reconciliation = {
   ok: boolean;
 };
 
+export type ArithmeticEquation = "row" | "subtotal" | "iva" | "total" | "igtf";
+
+export type ArithmeticIssue = {
+  equation: ArithmeticEquation;
+  cell: string;
+  printed: number;
+  calculated: number;
+  difference: number;
+  message: string;
+  reviewed: boolean;
+};
+
 export type ParsedBudget = {
   header: BudgetHeader;
   client: BudgetClient;
@@ -109,6 +121,9 @@ export type ParsedBudget = {
   warnings: string[];
   structureErrors: StructureError[];
   reconciliation: Reconciliation;
+  /** Digital o escaneo. Ausente en objetos de prueba armados a mano. */
+  origin?: "digital" | "scan";
+  arithmetic?: ArithmeticIssue[];
 };
 
 export function tracked<T>(value: T, status: FieldStatus): Tracked<T> {

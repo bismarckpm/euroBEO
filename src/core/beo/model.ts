@@ -1,7 +1,7 @@
 import type { FieldStatus } from "../budget/model";
 
 /** Estado de un campo de la propuesta. `REVIEW` marca un dato asignado para que la asistente lo confirme. */
-export type BeoFieldStatus = FieldStatus | "REVIEW";
+export type BeoFieldStatus = FieldStatus | "REVIEW" | "VALIDATE";
 
 export type BeoKind = "MONTAJE" | "EVENTO" | "DESMONTAJE";
 

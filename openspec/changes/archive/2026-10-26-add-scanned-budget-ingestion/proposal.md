@@ -11,11 +11,11 @@ Una prueba con un escaneo real (Calox International, "Coctel - Encuentro Nena", 
 - Los PDF sin capa de texto dejan de rechazarse y pasan por una vía de escaneo.
 - Servicio de OCR local (Python con OpenCV y Tesseract en español) dentro de Docker Compose: preprocesa, detecta la rejilla, lee celda por celda y devuelve fragmentos con coordenadas en el mismo formato que la lectura digital.
 - El parser existente procesa esos fragmentos sin cambios de lógica.
-- Verificación aritmética reforzada: filas, subtotal, IVA 16 %, logística 1 % sobre alimentos y bebidas, total e IGTF 3 %, con la celda exacta señalada si algo no cuadra.
+- Alertas de montos, en digitales y escaneados: filas, subtotal, IVA 16 %, total con la logística impresa e IGTF 3 %. Cada diferencia se muestra y no bloquea ni corrige. La logística no se verifica contra una base.
 - En la revisión, todo valor leído por OCR queda marcado para validar, con el recorte del escaneo al lado.
 - Conciliación: si después se sube el PDF digital del mismo evento, se comparan y se regeneran solo las B.E.O. afectadas.
 - Control de calidad mínima del escaneo (resolución y legibilidad).
-- Preparado para fotos de celular (corrección de perspectiva), con su aceptación sujeta a muestras reales.
+- Corrección de perspectiva para fotos de celular, probada con imágenes sintéticas. La aceptación con fotos reales queda en el change `validate-phone-photo-ingestion`.
 
 Fuera de alcance: OCR en la nube o con modelos de visión; lectura de anotaciones manuscritas (solo se detectan y se advierte).
 
@@ -25,7 +25,7 @@ Fuera de alcance: OCR en la nube o con modelos de visión; lectura de anotacione
 - `scanned-budget-ocr`: lectura de presupuestos escaneados o fotografiados mediante OCR local guiado por la plantilla.
 
 ### Modified Capabilities
-- `budget-ingestion`: aceptación de PDF sin texto, verificación aritmética reforzada y conciliación con el PDF digital.
+- `budget-ingestion`: aceptación de PDF sin texto, alertas de montos, cuadre de totales sin bloquear la carga y conciliación con el PDF digital.
 - `event-review`: validación de valores leídos por OCR con el recorte del escaneo.
 - `platform-foundation`: nuevo servicio de OCR en Docker Compose.
 
