@@ -32,13 +32,6 @@ export function validateBeoLines(label: string, lines: CheckedLine[]): BeoIssue[
         message: `Falta clasificar «${name}» en ${label}.`,
       });
     }
-    if (line.section === "ALIMENTOS" && line.unitPriceCents === null) {
-      issues.push({
-        beo: label,
-        field: name,
-        message: `El alimento «${name}» de ${label} no tiene precio.`,
-      });
-    }
     if (line.section === "PERSONAL" && !line.groupName.trim()) {
       issues.push({
         beo: label,
@@ -61,7 +54,7 @@ export function validateBeoLines(label: string, lines: CheckedLine[]): BeoIssue[
   return issues;
 }
 
-/** El botón Confirmar y generar usa este estado. Los mensajes nombran ítem y B.E.O. */
+/** Generar B.E.O., generar memorándum y generar ambos usan este estado. Los mensajes nombran ítem y B.E.O. */
 export function generateButtonState(input: { pendingCount: number; issues: BeoIssue[] }): {
   disabled: boolean;
   messages: string[];

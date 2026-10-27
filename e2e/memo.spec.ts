@@ -63,10 +63,16 @@ test("genera el memo de Nena con los salones de sus B.E.O.", async ({ page }) =>
     const newVersion = page.getByRole("button", { name: "Guardar como nueva versión" });
     await expect(reviewLink.or(newVersion)).toBeVisible({ timeout: 60_000 });
     if (await newVersion.isVisible()) {
+      const saved = page.waitForResponse(
+        (response) => response.url().includes("/api/budgets") && response.request().method() === "POST",
+      );
       await newVersion.click();
+      await saved;
     }
     await reviewLink.click();
-    await expect(page.getByRole("heading", { name: "Revisión" })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole("heading", { name: "Datos del evento" }).first()).toBeVisible({
+      timeout: 60_000,
+    });
     await expect(page.getByTestId("memo-nav")).toContainText("Tarifa de estacionamiento");
 
     await page.getByLabel("Cartelera del evento").fill("GRAN ENCUENTRO NENA");
@@ -78,6 +84,7 @@ test("genera el memo de Nena con los salones de sus B.E.O.", async ({ page }) =>
     const salons: string[] = [];
     for (let index = 0; index < total; index += 1) {
       await nav.nth(index).click();
+      await expect(nav.nth(index)).toHaveAttribute("aria-current", "page");
       const label = ((await nav.nth(index).innerText()) ?? "").replace(/\s+/g, " ");
       const salon = /·\s*(.*?)\s*(Montaje|Evento|Desmontaje)/.exec(label)?.[1]?.trim();
       if (salon) salons.push(salon);
@@ -85,14 +92,20 @@ test("genera el memo de Nena con los salones de sus B.E.O.", async ({ page }) =>
     }
 
     await page.getByTestId("memo-nav").click();
+    await expect(page.getByTestId("memo-nav")).toHaveAttribute("aria-current", "page");
     const number = page.getByLabel("Número del memorándum");
-    if ((await number.inputValue()).trim() === "") {
-      await number.fill("89");
-      await number.press("Tab");
-    }
+    await expect(number).not.toHaveValue("");
+    const savedNumber = page.waitForResponse(
+      (response) => response.url().includes("/review") && response.request().method() === "POST",
+    );
+    await number.fill("89");
+    await number.press("Tab");
+    await savedNumber;
     await clearSelected(page);
     await expect(page.getByTestId("pendientes-evento")).toHaveText("Sin pendientes", { timeout: 20_000 });
-    await page.getByTestId("confirmar-generar").click();
+    await page.getByTestId("paso-generar").click();
+    await expect(page).toHaveURL(/\/asistente\/generar/);
+    await page.getByTestId("generar-ambos").click();
     await expect(page.getByTestId("generacion")).toContainText("Se inició la generación", { timeout: 180_000 });
     const memoLink = page.getByRole("link", { name: /^89 / });
     await expect(memoLink).toBeVisible();

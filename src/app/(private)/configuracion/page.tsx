@@ -7,6 +7,7 @@ import {
   listMappings,
   listMemos,
   listSalons,
+  readMemoSequence,
   readSequence,
   resolveSalon,
 } from "@/lib/catalog-db";
@@ -23,6 +24,7 @@ import {
   changeMapping,
   changeMemo,
   changeSalon,
+  changeMemoSequence,
   changeSequence,
   changeTexts,
   changePresentation,
@@ -99,13 +101,14 @@ export default async function ConfigurationPage({
 }) {
   const params = await searchParams;
   const tab = activeTab(params.tab);
-  const [salons, mappings, items, texts, memos, sequence, learned, logs, templates] = await Promise.all([
+  const [salons, mappings, items, texts, memos, sequence, memoSequence, learned, logs, templates] = await Promise.all([
     listSalons(),
     listMappings(),
     listItems(),
     listFixedTexts(),
     listMemos(),
     readSequence(),
+    readMemoSequence(),
     listLearnedNormalizations(),
     listAiCallLogs(),
     listTemplates(),
@@ -355,6 +358,7 @@ export default async function ConfigurationPage({
       ) : null}
 
       {tab === "correlativo" ? (
+        <>
         <form action={changeSequence} className="stack">
           <p>
             Último emitido: <strong>{sequence?.last ?? "sin configurar"}</strong>
@@ -373,6 +377,20 @@ export default async function ConfigurationPage({
           </label>
           <button type="submit">Guardar correlativo</button>
         </form>
+        <form action={changeMemoSequence} className="stack">
+          <p>
+            Último memorándum emitido: <strong>{memoSequence.last}</strong>
+          </p>
+          <p>
+            Próximo número de memorándum: <strong>{memoSequence.next}</strong>
+          </p>
+          <label>
+            Último número de memorándum
+            <input name="memoLast" required defaultValue={memoSequence.last} placeholder="89" />
+          </label>
+          <button type="submit">Guardar número de memorándum</button>
+        </form>
+        </>
       ) : null}
 
       {tab === "plantilla" ? (

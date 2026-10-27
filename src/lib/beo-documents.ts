@@ -60,9 +60,12 @@ export type GenerationResult = {
   driveMessage: string | null;
 };
 
+export type GenerationScope = "beos" | "memos" | "both";
+
 export type GenerationOptions = {
   numbers?: string[];
   acknowledge?: boolean;
+  scope?: GenerationScope;
   toPdf?: (docx: Buffer) => Promise<Buffer>;
 };
 
@@ -279,9 +282,11 @@ export async function generateEventDocuments(
   const templateBytes = await readFile(template.filePath);
   const render = (data: BeoTemplateData) => renderDocx(templateBytes, data);
   const toPdf = options.toPdf ?? convertToPdf;
+  const scope = options.scope ?? "both";
 
   const layouts: { beoId: string; parts: RenderedBeo[] }[] = [];
   try {
+    if (scope !== "memos") {
     for (const beo of review.beos) {
       if (beo.status === "voided") {
         continue;
@@ -296,6 +301,7 @@ export async function generateEventDocuments(
       const parts = await layoutBeo(data, { render, toPdf, pages: countPages });
       layouts.push({ beoId: beo.id, parts });
     }
+    }
   } catch (error) {
     if (error instanceof PdfConversionError) {
       throw new ReviewError(error.message, 500);
@@ -307,7 +313,10 @@ export async function generateEventDocuments(
   const previousBeoDocs = await prisma.generatedDocument.count({
     where: { eventId, beoId: { not: null } },
   });
-  const assigned = await prisma.$transaction(async (tx) => {
+  const assigned =
+    scope === "memos" || layouts.length === 0
+      ? []
+      : await prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<{ lastNumber: number; year: number }[]>`
       SELECT "lastNumber", "year"
       FROM "Sequence"
@@ -434,16 +443,20 @@ export async function generateEventDocuments(
         });
       }
     }
-    if (previousBeoDocs > 0) {
+    if (scope !== "memos" && previousBeoDocs > 0) {
       await markMemosStale(eventId);
     }
-    files.push(
-      ...(await writePendingMemos(eventId, review.title, toPdf)).map((file) => ({
+    if (scope !== "beos") {
+      const memos = (await writePendingMemos(eventId, review.title, toPdf)).map((file) => ({
         ...file,
         driveStatus: "pendiente" as const,
         driveUrl: null,
-      })),
-    );
+      }));
+      if (scope === "memos" && memos.length === 0) {
+        throw new ReviewError("No hay un memorándum pendiente de generar.", 409);
+      }
+      files.push(...memos);
+    }
   } catch (error) {
     await Promise.all(written.map((file) => rm(file, { force: true })));
     if (error instanceof PdfConversionError) {

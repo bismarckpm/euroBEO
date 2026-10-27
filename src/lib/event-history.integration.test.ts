@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PDFDocument } from "pdf-lib";
 import { afterAll, describe, expect, it } from "vitest";
@@ -7,7 +8,7 @@ import { beoDownloadName } from "../core/documents/beo-template-data";
 import { createMemoryDrive } from "../core/drive/memory";
 import { DOCX_MIME } from "../core/drive/names";
 import { getPrisma } from "./db";
-import { compareDocumentVersions, listEvents } from "./event-history";
+import { compareDocumentVersions, deleteEvent, listEvents } from "./event-history";
 import { listEventDocuments, regenerateSelectedDocuments } from "./beo-documents";
 import { voidBeo } from "./event-review";
 
@@ -157,5 +158,61 @@ describe.skipIf(!ready)("historial de eventos", () => {
     const listed = await listEventDocuments(event.id);
     expect(listed.suggested).not.toContain(number);
     expect(listed.files.some((file) => file.voided)).toBe(true);
+  });
+
+  it("elimina un evento en revisión y uno generado sin bajar el correlativo", async () => {
+    const prisma = getPrisma();
+    const sequence = await prisma.sequence.findUnique({ where: { key: "beo" } });
+    if (!sequence) {
+      throw new Error("Falta el correlativo.");
+    }
+    const reviewEvent = await prisma.event.create({
+      data: {
+        title: `Revisión ${randomUUID()}`,
+        company: `Cliente ${randomUUID()}`,
+        locator: randomUUID(),
+        beos: {
+          create: {
+            position: 0,
+            status: "draft",
+            date: "2026-10-27",
+            salon: "Topacio",
+            kind: "EVENTO",
+          },
+        },
+      },
+    });
+    const generated = await prisma.event.create({
+      data: {
+        title: `Generado ${randomUUID()}`,
+        company: `Cliente ${randomUUID()}`,
+        locator: randomUUID(),
+        beos: {
+          create: {
+            position: 0,
+            status: "generated",
+            date: "2026-10-27",
+            salon: "Diamante",
+            kind: "EVENTO",
+          },
+        },
+      },
+    });
+    const dir = path.join(process.cwd(), "data", "generated", generated.id);
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "nota.txt"), "archivo");
+    try {
+      await deleteEvent(reviewEvent.id);
+      await deleteEvent(generated.id);
+      expect(await prisma.event.findUnique({ where: { id: reviewEvent.id } })).toBeNull();
+      expect(await prisma.event.findUnique({ where: { id: generated.id } })).toBeNull();
+      expect(await prisma.beo.count({ where: { eventId: { in: [reviewEvent.id, generated.id] } } })).toBe(0);
+      expect(existsSync(dir)).toBe(false);
+      const after = await prisma.sequence.findUnique({ where: { key: "beo" } });
+      expect(after?.lastNumber).toBe(sequence.lastNumber);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await prisma.event.deleteMany({ where: { id: { in: [reviewEvent.id, generated.id] } } });
+    }
   });
 });

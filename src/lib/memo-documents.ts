@@ -7,7 +7,7 @@ import { fillDocx } from "../core/documents/render-docx";
 import { documentSnapshot } from "../core/history/compare";
 import { memoDownloadName, memoTemplateDataSchema } from "../core/memo/template-data";
 import { getPrisma } from "./db";
-import { refreshMemoFromBeos, MemoFlowError } from "./event-memos";
+import { refreshMemoFromBeos, rememberIssuedMemoNumber, MemoFlowError } from "./event-memos";
 import { ReviewError } from "./event-review";
 
 export type MemoFile = {
@@ -119,8 +119,9 @@ async function writeMemoFile(input: {
   });
   await getPrisma().memo.update({
     where: { id: input.memoId },
-    data: { status: "generated", stale: false, version: input.version },
+    data: { status: "generated", stale: false, version: input.version, number: data.numero },
   });
+  await rememberIssuedMemoNumber(data.numero);
   return {
     id: saved.id,
     fileName,

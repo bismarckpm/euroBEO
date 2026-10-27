@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const status = z.enum(["RULE", "AI", "PENDING"]);
+const status = z.enum(["RULE", "AI", "PENDING", "ABSENT"]);
 
 function tracked<T extends z.ZodType>(value: T) {
   return z.object({ value, status });

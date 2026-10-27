@@ -132,7 +132,7 @@ export function BudgetUpload() {
           {typeof result.version === "number" ? <p>Versión {result.version}.</p> : null}
           {result.saved && result.eventId ? (
             <p>
-              <Link href={`/eventos/${result.eventId}/revision`}>Revisar evento</Link>
+              <Link href={`/eventos/${result.eventId}/asistente/datos`}>Revisar evento</Link>
             </p>
           ) : null}
         </section>

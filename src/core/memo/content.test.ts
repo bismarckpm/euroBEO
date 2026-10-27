@@ -46,16 +46,16 @@ describe("contenido del memorándum", () => {
     expect(fields.find((field) => field.key === "numero")?.status).toBe("RULE");
   });
 
-  it("deja el número pendiente hasta que la asistente lo escriba", () => {
+  it("deja el número propuesto en Regla", () => {
     const fields = planMemoFields({
       type,
       beos: [eventBeo("2026-10-07", "Plaza Venezuela")],
       signer,
-      number: "  ",
+      number: "90",
       issuedOn,
       eventTitle: "Evento",
     });
-    expect(fields.find((field) => field.key === "numero")).toMatchObject({ value: "", status: "PENDING" });
+    expect(fields.find((field) => field.key === "numero")).toMatchObject({ value: "90", status: "RULE" });
   });
 
   it("marca el cuerpo para revisar cuando la cartelera no está confirmada", () => {

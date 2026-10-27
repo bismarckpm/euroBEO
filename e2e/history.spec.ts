@@ -61,7 +61,7 @@ test("anular una B.E.O. no vuelve a proponer su número", async ({ page }) => {
     await page.getByLabel("Contraseña").fill(password);
     await page.getByRole("button", { name: "Ingresar" }).click();
     await page.goto(`/eventos/${event.id}/revision`);
-    await expect(page.getByRole("heading", { name: "Revisión" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Generar" })).toBeVisible();
     await expect(page.getByTestId("siguiente-numero")).not.toContainText(voidedNumber);
     await page.getByTestId("anular-beo").click();
     await expect(page.getByTestId("beo-nav")).toContainText("Anulada");

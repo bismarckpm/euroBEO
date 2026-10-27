@@ -19,10 +19,16 @@ async function openReview(page: Page) {
   const newVersion = page.getByRole("button", { name: "Guardar como nueva versión" });
   await expect(reviewLink.or(newVersion)).toBeVisible({ timeout: 60_000 });
   if (await newVersion.isVisible()) {
+    const saved = page.waitForResponse(
+      (response) => response.url().includes("/api/budgets") && response.request().method() === "POST",
+    );
     await newVersion.click();
+    await saved;
   }
   await reviewLink.click();
-  await expect(page.getByRole("heading", { name: "Revisión" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("heading", { name: "Datos del evento" }).first()).toBeVisible({
+    timeout: 60_000,
+  });
 }
 
 async function openCount(page: Page): Promise<number> {
@@ -65,6 +71,7 @@ test("carga la cata, ajusta el personal y genera sin errores de validación", as
   try {
     await openReview(page);
     await expect(page.getByTestId("errores-validacion")).toHaveCount(0);
+    await page.getByTestId("beo-nav").first().click();
 
     const lines = page.getByTestId("linea").or(page.getByTestId("linea-abierta"));
     const count = await lines.count();
@@ -89,12 +96,14 @@ test("carga la cata, ajusta el personal y genera sin errores de validación", as
     const total = await nav.count();
     for (let index = 0; index < total; index += 1) {
       await nav.nth(index).click();
+      await expect(nav.nth(index)).toHaveAttribute("aria-current", "page");
       await clearSelected(page);
     }
     const memos = page.getByTestId("memo-nav");
     const memoCount = await memos.count();
     for (let index = 0; index < memoCount; index += 1) {
       await memos.nth(index).click();
+      await expect(memos.nth(index)).toHaveAttribute("aria-current", "page");
       const number = page.getByLabel("Número del memorándum");
       if ((await number.count()) > 0 && (await number.inputValue()).trim() === "") {
         await number.fill("89");
@@ -103,8 +112,10 @@ test("carga la cata, ajusta el personal y genera sin errores de validación", as
       await clearSelected(page);
     }
     await expect(page.getByTestId("errores-validacion")).toHaveCount(0);
-    await expect(page.getByTestId("confirmar-generar")).toBeEnabled();
-    await page.getByTestId("confirmar-generar").click();
+    await page.getByTestId("paso-generar").click();
+    await expect(page).toHaveURL(/\/asistente\/generar/);
+    await expect(page.getByTestId("generar-ambos")).toBeEnabled();
+    await page.getByTestId("generar-ambos").click();
     await expect(page.getByTestId("generacion")).toContainText("Se inició la generación", { timeout: 120_000 });
   } finally {
     const created = await prisma.generatedDocument.findMany();

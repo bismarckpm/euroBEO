@@ -79,6 +79,7 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("generate"),
     numbers: z.array(z.string()).optional(),
     acknowledge: z.boolean().optional(),
+    scope: z.enum(["beos", "memos", "both"]).optional(),
   }),
   z.object({
     action: z.literal("add-memo"),
@@ -162,7 +163,11 @@ export async function POST(request: Request, context: RouteContext): Promise<Nex
     const body = bodySchema.parse(await request.json());
     if (body.action === "generate") {
       return NextResponse.json(
-        await startGeneration(id, { numbers: body.numbers, acknowledge: body.acknowledge }),
+        await startGeneration(id, {
+          numbers: body.numbers,
+          acknowledge: body.acknowledge,
+          scope: body.scope,
+        }),
       );
     }
     const review = await applyAction(id, body);
@@ -197,7 +202,11 @@ async function applyAction(eventId: string, body: z.infer<typeof bodySchema>) {
     case "split":
       return splitBeo({ eventId, beoId: body.beoId, salon: body.salon, lineIds: body.lineIds });
     case "generate":
-      return startGeneration(eventId, { numbers: body.numbers, acknowledge: body.acknowledge });
+      return startGeneration(eventId, {
+        numbers: body.numbers,
+        acknowledge: body.acknowledge,
+        scope: body.scope,
+      });
     case "add-memo":
       return addMemoToEvent(eventId, body.memoTypeId);
     case "update-memo-field":

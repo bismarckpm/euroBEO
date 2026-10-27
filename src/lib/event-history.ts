@@ -1,3 +1,5 @@
+import { rm } from "node:fs/promises";
+import path from "node:path";
 import type { Prisma } from "@prisma/client";
 import { compareSnapshots, type SnapshotField } from "../core/history/compare";
 import {
@@ -118,4 +120,15 @@ export async function compareDocumentVersions(
     return { changes: [], message: "No hay datos guardados para comparar." };
   }
   return { changes: compareSnapshots(before, after), message: null };
+}
+
+/** Borra el evento, sus presupuestos, B.E.O., memorándums y la carpeta generada. El correlativo no cambia. */
+export async function deleteEvent(eventId: string): Promise<void> {
+  const prisma = getPrisma();
+  const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true } });
+  if (!event) {
+    throw new ReviewError("No se encontró el evento.", 404);
+  }
+  await prisma.event.delete({ where: { id: eventId } });
+  await rm(path.join(process.cwd(), "data", "generated", eventId), { recursive: true, force: true });
 }

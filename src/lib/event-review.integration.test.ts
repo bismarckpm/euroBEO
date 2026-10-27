@@ -12,6 +12,7 @@ import { loadBudgetCatalog } from "./budget-catalog";
 import { eventDocumentZip } from "./beo-documents";
 import { getPrisma } from "./db";
 import {
+  addBeoLine,
   addMemoToEvent,
   getEventReview,
   mergeBeos,
@@ -411,5 +412,106 @@ describe.skipIf(!ready)("revisión del evento", () => {
 
     const china = await getEventReview(await eventFrom("China"));
     expect(china.memos.map((memo) => memo.name)).toContain("Tarifa de estacionamiento");
+  });
+
+  it("no guarda una línea sin descripción y sí al confirmarla", async () => {
+    const prisma = getPrisma();
+    const event = await prisma.event.create({
+      data: {
+        title: `Línea ${randomUUID()}`,
+        company: "Cliente de prueba",
+        locator: randomUUID(),
+        beos: {
+          create: {
+            position: 0,
+            status: "draft",
+            date: "2026-10-27",
+            salon: "Topacio",
+            kind: "EVENTO",
+          },
+        },
+      },
+    });
+    const beo = await prisma.beo.findFirst({ where: { eventId: event.id } });
+    if (!beo) {
+      throw new Error("No se creó la B.E.O.");
+    }
+    try {
+      await expect(
+        addBeoLine({
+          eventId: event.id,
+          beoId: beo.id,
+          section: "ALIMENTOS",
+          groupName: "",
+          qty: 2,
+          description: "   ",
+          unitPrice: "3,00",
+        }),
+      ).rejects.toThrow(/descripción/);
+      const saved = await addBeoLine({
+        eventId: event.id,
+        beoId: beo.id,
+        section: "ALIMENTOS",
+        groupName: "",
+        qty: 2,
+        description: "Agua",
+        unitPrice: "3,00",
+      });
+      const line = saved.beos.flatMap((item) => item.lines).find((item) => item.description === "Agua");
+      expect(line?.qty).toBe(2);
+      expect(line?.unitPriceCents).toBe(300);
+    } finally {
+      await prisma.event.delete({ where: { id: event.id } });
+    }
+  });
+
+  it("genera solo las B.E.O. o solo el memorándum", async () => {
+    const eventId = await rheumatologyEvent();
+    const prisma = getPrisma();
+    const before = await prisma.sequence.findUnique({ where: { key: "beo" } });
+    const memoBefore = await prisma.sequence.findUnique({ where: { key: "memo" } });
+    const type = (await listMemos()).find((memo) => memo.name === "Tarifa de estacionamiento");
+    if (!type) {
+      throw new Error("No está el tipo de memorándum.");
+    }
+    await addMemoToEvent(eventId, type.id);
+    await prisma.memoField.updateMany({
+      where: { memo: { eventId } },
+      data: { status: "RULE", source: "memo.edit", value: "Confirmado" },
+    });
+    await prisma.beoField.updateMany({ where: { beo: { eventId } }, data: { status: "RULE" } });
+    await prisma.beoLine.updateMany({ where: { beo: { eventId } }, data: { status: "RULE" } });
+    const prepared = await getEventReview(eventId);
+    expect(prepared.pendingCount).toBe(0);
+    const blank = await PDFDocument.create();
+    blank.addPage();
+    const pdf = Buffer.from(await blank.save());
+    const toPdf = async () => pdf;
+    try {
+      const memos = await startGeneration(eventId, { scope: "memos", toPdf });
+      expect(memos.files.length).toBeGreaterThan(0);
+      expect(memos.files.every((file) => file.kind === "memo")).toBe(true);
+      const afterMemos = await prisma.sequence.findUnique({ where: { key: "beo" } });
+      expect(afterMemos?.lastNumber).toBe(before?.lastNumber);
+
+      const beos = await startGeneration(eventId, { scope: "beos", toPdf });
+      expect(beos.files.length).toBeGreaterThan(0);
+      expect(beos.files.every((file) => file.kind !== "memo")).toBe(true);
+    } finally {
+      if (before) {
+        await prisma.sequence.update({
+          where: { key: "beo" },
+          data: { lastNumber: before.lastNumber, year: before.year },
+        });
+      }
+      if (memoBefore) {
+        await prisma.sequence.update({
+          where: { key: "memo" },
+          data: { lastNumber: memoBefore.lastNumber, year: memoBefore.year },
+        });
+      }
+      await prisma.generatedDocument.deleteMany({ where: { eventId } });
+      await rm(path.join(process.cwd(), "data", "generated", eventId), { recursive: true, force: true });
+    }
   });
 });

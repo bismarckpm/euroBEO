@@ -324,17 +324,30 @@ td {
   gap: 0.4rem;
 }
 
+.review-nav a,
 .review-nav button {
   display: grid;
   background: transparent;
   color: var(--ink);
   text-align: left;
   border: 1px solid var(--line);
+  text-decoration: none;
 }
 
+.review-nav a[aria-current="page"],
 .review-nav button[aria-current="page"] {
   background: var(--gold);
   color: #fff;
+}
+
+.review-nav a.needs-review,
+.review-nav button.needs-review {
+  border-color: #9a3412;
+}
+
+.review-nav a strong,
+.review-nav button strong {
+  font-style: normal;
 }
 
 .beo-columns {
@@ -365,6 +378,10 @@ td {
 
 .field-pending {
   background: #f8e4e2;
+}
+
+.field-absent {
+  background: #f3f1ec;
 }
 
 .ocr-crop {
@@ -421,6 +438,34 @@ td {
   grid-template-columns: minmax(0, 1fr);
   gap: 0.55rem;
   margin: 0.5rem 0 1rem;
+}
+
+.line-dialog {
+  border: 1px solid var(--line);
+  padding: 1rem;
+  max-width: 28rem;
+}
+
+.line-dialog form {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.line-dialog::backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+
+.downloads table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+}
+
+.downloads th,
+.downloads td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
 }
 
 .add-line button,

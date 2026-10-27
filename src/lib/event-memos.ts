@@ -1,5 +1,6 @@
 import { normalizeLabel } from "../core/config/normalize";
 import { planMemoFields, type MemoBeoSource, type MemoFieldPlan } from "../core/memo/content";
+import { MEMO_SEQUENCE_KEY, parseMemoNumber, proposeNextMemoNumber } from "../core/memo/number";
 import { getPrisma } from "./db";
 
 const OPEN_STATUS = new Set(["PENDING", "AI", "REVIEW"]);
@@ -168,6 +169,42 @@ async function applyPlan(memo: MemoRecord, plan: MemoFieldPlan[]): Promise<void>
   }
 }
 
+async function memoSequenceLast(): Promise<number> {
+  const row = await getPrisma().sequence.upsert({
+    where: { key: MEMO_SEQUENCE_KEY },
+    create: { key: MEMO_SEQUENCE_KEY, lastNumber: 0, year: 0 },
+    update: {},
+  });
+  return row.lastNumber;
+}
+
+async function nextMemoNumber(): Promise<string> {
+  const prisma = getPrisma();
+  const last = await memoSequenceLast();
+  const drafts = await prisma.memo.findMany({ select: { number: true } });
+  return proposeNextMemoNumber(
+    last,
+    drafts.map((memo) => memo.number ?? ""),
+  );
+}
+
+/** Deja como último emitido el número usado, si es mayor. */
+export async function rememberIssuedMemoNumber(value: string): Promise<void> {
+  const parsed = parseMemoNumber(value);
+  if (parsed === null) {
+    return;
+  }
+  const prisma = getPrisma();
+  const current = await memoSequenceLast();
+  if (parsed <= current) {
+    return;
+  }
+  await prisma.sequence.update({
+    where: { key: MEMO_SEQUENCE_KEY },
+    data: { lastNumber: parsed },
+  });
+}
+
 function planFor(
   memo: MemoRecord,
   bundle: Awaited<ReturnType<typeof loadBundle>>,
@@ -192,18 +229,20 @@ export async function syncEventMemos(eventId: string): Promise<EventMemo[]> {
     if (present.has(type.id) || !triggered(type.keywords, bundle.benefits, bundle.triggers)) {
       continue;
     }
+    const number = await nextMemoNumber();
     await prisma.memo.create({
       data: {
         eventId,
         memoTypeId: type.id,
         status: "draft",
         manual: false,
+        number,
         fields: {
           create: planMemoFields({
             type,
             beos: bundle.beos,
             signer: bundle.signer,
-            number: "",
+            number,
             issuedOn: new Date(),
             eventTitle: bundle.event.title,
           }).map((field) => ({
@@ -222,6 +261,11 @@ export async function syncEventMemos(eventId: string): Promise<EventMemo[]> {
   for (const memo of fresh.event.memos) {
     if (memo.documents.length > 0) {
       continue;
+    }
+    if (!memo.number?.trim()) {
+      const number = await nextMemoNumber();
+      await prisma.memo.update({ where: { id: memo.id }, data: { number } });
+      memo.number = number;
     }
     await applyPlan(memo, planFor(memo, fresh));
   }
@@ -242,18 +286,20 @@ export async function addEventMemo(eventId: string, memoTypeId: string): Promise
   if (bundle.event.memos.some((memo) => memo.memoTypeId === type.id)) {
     throw new MemoFlowError("Ese memorándum ya está en el evento.", 409);
   }
+  const number = await nextMemoNumber();
   await prisma.memo.create({
     data: {
       eventId,
       memoTypeId: type.id,
       status: "draft",
       manual: true,
+      number,
       fields: {
         create: planMemoFields({
           type,
           beos: bundle.beos,
           signer: bundle.signer,
-          number: "",
+          number,
           issuedOn: new Date(),
           eventTitle: bundle.event.title,
         }).map((field) => ({
@@ -280,15 +326,20 @@ export async function updateMemoField(
   if (!field) {
     throw new MemoFlowError("No se encontró el campo del memorándum.", 404);
   }
-  const next = value.trim();
+  let next = value.trim();
+  if (key === "numero" && !next) {
+    const current = await prisma.memo.findUnique({ where: { id: memoId }, select: { number: true } });
+    next = current?.number?.trim() || (await nextMemoNumber());
+  }
+  const status = key === "numero" || next ? "RULE" : "PENDING";
   await prisma.memoField.update({
     where: { id: field.id },
-    data: { value: next || null, status: next ? "RULE" : "PENDING", source: "memo.edit" },
+    data: { value: next || null, status, source: "memo.edit" },
   });
   if (key === "numero") {
     await prisma.memo.update({
       where: { id: memoId },
-      data: { number: next || null },
+      data: { number: next },
     });
   }
 }

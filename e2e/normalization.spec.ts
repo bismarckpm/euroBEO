@@ -44,6 +44,7 @@ test("corregir un salón se aprende y el siguiente proceso no llama a la IA", as
     .click();
   await page.getByLabel("Texto a procesar").fill(source);
   await page.getByRole("button", { name: "Procesar texto" }).click();
-  await expect(page.getByTestId("normalizacion")).toContainText("Pendiente");
+  await expect(page.getByTestId("normalizacion")).toContainText(source.replace(/^SALON\s+/i, ""));
+  await expect(page.getByTestId("normalizacion")).toContainText("Regla");
   await expect(page.getByTestId("normalizacion")).toContainText("Sin llamada a la IA");
 });

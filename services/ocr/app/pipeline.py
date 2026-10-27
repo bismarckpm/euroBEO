@@ -346,7 +346,8 @@ def _read_table(
                     else:
                         bands[-1].append(word)
                 for band in bands:
-                    text = re.sub(r"\s+", " ", " ".join(word[0] for word in band)).strip()
+                    ordered = sorted(band, key=lambda item: item[1])
+                    text = re.sub(r"\s+", " ", " ".join(word[0] for word in ordered)).strip()
                     if not re.search(r"stand|hora|montaje|área|area|sal[oó]n", text, re.I):
                         continue
                     confidence = sum(word[5] for word in band) / len(band)

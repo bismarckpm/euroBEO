@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listEvents } from "@/lib/event-history";
+import { DeleteEventButton } from "./delete-event-button";
 
 type PageProps = {
   searchParams: Promise<{ q?: string; fecha?: string; page?: string }>;
@@ -21,6 +22,9 @@ export default async function EventosPage({ searchParams }: PageProps) {
     <main className="panel">
       <h1>Eventos</h1>
       <p className="lede">Busca un evento por cliente, nombre, fecha o localizador.</p>
+      <p>
+        <Link href="/presupuestos?crear=1">Crear evento</Link>
+      </p>
       <form className="form-inline" method="get" data-testid="buscar-eventos">
         <label>
           Buscar
@@ -63,7 +67,8 @@ export default async function EventosPage({ searchParams }: PageProps) {
               <td>{event.locator}</td>
               <td data-testid="estado-evento">{event.status}</td>
               <td>
-                <Link href={`/eventos/${event.id}/revision`}>Abrir</Link>
+                <Link href={`/eventos/${event.id}/revision`}>Abrir</Link>{" "}
+                <DeleteEventButton id={event.id} company={event.company} title={event.title} />
               </td>
             </tr>
           ))}

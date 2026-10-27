@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type {
   EventReview,
   ReviewBeo,
@@ -9,6 +11,14 @@ import type {
   ReviewMemo,
 } from "@/lib/event-review";
 import { generateButtonState } from "@/core/documents/validate-beo";
+import {
+  adjacentWizardStep,
+  beoNeedsReview,
+  describeGeneratedFile,
+  wizardSequence,
+  wizardStepHref,
+  type WizardStep,
+} from "@/core/review/guide";
 import { formatAmount } from "@/lib/format";
 
 const FIELD_LABELS: Record<string, string> = {
@@ -63,6 +73,16 @@ const KIND_LABEL: Record<string, string> = {
   DESMONTAJE: "Desmontaje",
 };
 
+function stepNumber(steps: WizardStep[], current: WizardStep): number {
+  const index = steps.findIndex((item) => {
+    if (item.kind !== current.kind) return false;
+    if (item.kind === "beo" && current.kind === "beo") return item.id === current.id;
+    if (item.kind === "memo" && current.kind === "memo") return item.id === current.id;
+    return true;
+  });
+  return index + 1;
+}
+
 function shownValue(key: string, value: string | null): string {
   if (value === null) return "";
   if (key === "rentCents" && /^-?\d+$/.test(value)) return formatAmount(Number(value));
@@ -72,9 +92,14 @@ function shownValue(key: string, value: string | null): string {
 function badge(status: string): string {
   if (status === "AI") return "IA";
   if (status === "PENDING") return "Pendiente";
+  if (status === "ABSENT") return "Sin dato";
   if (status === "REVIEW") return "Revisar";
   if (status === "VALIDATE") return "Validar";
   return "";
+}
+
+function needsAction(status: string): boolean {
+  return status === "PENDING" || status === "AI" || status === "REVIEW";
 }
 
 type GeneratedFile = {
@@ -82,6 +107,8 @@ type GeneratedFile = {
   fileName: string;
   number: string;
   exceedsPage: boolean;
+  kind?: string;
+  beoId?: string | null;
   driveStatus?: string;
   driveUrl?: string | null;
   version?: number;
@@ -97,6 +124,16 @@ function fieldLabel(key: string): string {
   return FIELD_LABELS[key] ?? key;
 }
 
+function rowFor(review: EventReview, file: GeneratedFile) {
+  const beo = review.beos.find((item) => item.id === file.beoId);
+  return describeGeneratedFile({
+    event: review.title,
+    number: file.number,
+    kind: file.kind ?? (file.beoId ? "beo" : "memo"),
+    beo: beo ? { salon: beo.salon, date: beo.date, kind: beo.kind } : null,
+  });
+}
+
 function driveLabel(status: string | undefined): string {
   if (status === "subido") return "Subido";
   if (status === "error") return "Error al subir";
@@ -105,6 +142,7 @@ function driveLabel(status: string | undefined): string {
 
 function tone(status: string): string {
   if (status === "AI") return "field-ai";
+  if (status === "ABSENT") return "field-absent";
   if (status === "PENDING" || status === "REVIEW" || status === "VALIDATE") return "field-pending";
   return "field-rule";
 }
@@ -146,11 +184,22 @@ function AmountAlert({
   );
 }
 
-export function ReviewScreen({ initial }: { initial: EventReview }) {
+export function ReviewScreen({
+  initial,
+  step,
+  announced = false,
+}: {
+  initial: EventReview;
+  step: WizardStep;
+  announced?: boolean;
+}) {
+  const router = useRouter();
   const [review, setReview] = useState(initial);
-  const [selectedId, setSelectedId] = useState(initial.beos[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState(step.kind === "beo" ? step.id : initial.beos[0]?.id ?? "");
   const [selectedMemoId, setSelectedMemoId] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(
+    announced ? "Se inició la generación de los documentos del evento." : null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [shared, setShared] = useState(initial.shared);
@@ -169,8 +218,22 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
   const saveIdle = useRef<Array<() => void>>([]);
   const numbered = review.beos.filter((beo) => beo.status !== "voided");
   const beoState = review.beos.map((beo) => `${beo.id}:${beo.status}`).join();
-  const selected = review.beos.find((beo) => beo.id === selectedId) ?? review.beos[0];
-  const selectedMemo = review.memos.find((memo) => memo.id === selectedMemoId) ?? null;
+  const selected =
+    (step.kind === "beo" ? review.beos.find((beo) => beo.id === step.id) : undefined) ??
+    review.beos.find((beo) => beo.id === selectedId) ??
+    review.beos[0];
+  const selectedMemo =
+    (step.kind === "memo" ? review.memos.find((memo) => memo.id === step.id) : undefined) ??
+    review.memos.find((memo) => memo.id === selectedMemoId) ??
+    null;
+  const guideInput = {
+    beos: review.beos,
+    issues: review.issues,
+    memos: review.memos.map((memo) => ({ id: memo.id, pendingCount: memo.pendingCount })),
+  };
+  const sequence = wizardSequence(guideInput);
+  const previousStep = adjacentWizardStep(guideInput, step, -1);
+  const nextStep = adjacentWizardStep(guideInput, step, 1);
 
   useEffect(() => {
     if (review.pendingCount > 0) {
@@ -237,13 +300,13 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
             driveMessage?: string | null;
           })
         | null;
-      if (id !== requestId.current) return;
+      if (id !== requestId.current) return false;
       if (!response.ok || !data) {
         if (response.status === 409 && (data?.message ?? "").includes("ya fue usado")) {
           setAcknowledge(true);
         }
         setError(data?.message ?? "No se pudo guardar.");
-        return;
+        return false;
       }
       if (data.started) {
         setFiles(data.files ?? []);
@@ -251,13 +314,13 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
         setAcknowledge(false);
         setMessage(notice ?? "Se inició la generación de los documentos del evento.");
         const refreshed = await fetch(`/api/events/${review.eventId}/review`);
-        if (id !== requestId.current) return;
+        if (id !== requestId.current) return false;
         if (refreshed.ok) {
           const next = (await refreshed.json()) as EventReview;
           setReview(next);
           setShared(next.shared);
         }
-        return;
+        return true;
       }
       if (data.files) {
         setFiles(data.files);
@@ -272,20 +335,34 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
         setSelectedMemoId(null);
       }
       setMessage(notice ?? null);
+      return true;
     } catch {
-      if (id !== requestId.current) return;
+      if (id !== requestId.current) return false;
       setError("No se pudo conectar con el servidor.");
+      return false;
     } finally {
       if (!locksButton) releaseSave();
       if (locksButton && id === requestId.current) setBusy(false);
     }
   }
 
-  async function generateDocuments() {
+  async function generateDocuments(scope: "beos" | "memos" | "both") {
     if (busy || generateButtonState(review).disabled) return;
     setBusy(true);
     await whenSavesFinish();
-    await send({ action: "generate", numbers, acknowledge });
+    const notice =
+      scope === "beos"
+        ? "Se inició la generación de las B.E.O."
+        : scope === "memos"
+          ? "Se inició la generación del memorándum."
+          : "Se inició la generación de los documentos del evento.";
+    const started = await send(
+      { action: "generate", numbers: scope === "memos" ? undefined : numbers, acknowledge, scope },
+      notice,
+    );
+    if (started) {
+      router.push(`${wizardStepHref(review.eventId, { kind: "archivos" })}?listo=1`);
+    }
   }
 
   async function saveOcr(key: string, value: string) {
@@ -314,15 +391,40 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
     <main className="panel review">
       <header className="review-heading">
         <div>
-          <h1>Revisión</h1>
+          <h1>
+            {step.kind === "datos"
+              ? "Datos del evento"
+              : step.kind === "beo"
+                ? "B.E.O."
+                : step.kind === "memo"
+                  ? "Memorándum"
+                  : step.kind === "generar"
+                    ? "Generar"
+                    : "Archivos"}
+          </h1>
           <p className="lede">{review.title}</p>
         </div>
         <div className="review-actions">
           <p data-testid="pendientes-evento">
             {review.pendingCount === 0 ? "Sin pendientes" : `Faltan ${review.pendingCount}`}
           </p>
-          {numbers[0] ? <p data-testid="siguiente-numero">Siguiente número {numbers[0]}</p> : null}
-          {review.pendingCount === 0 ? (
+          <div data-testid="guia-revision">
+            <p>{`Paso ${stepNumber(sequence, step)} de ${sequence.length}. Siguiente salta las que ya están en cero.`}</p>
+            {previousStep ? (
+              <Link href={wizardStepHref(review.eventId, previousStep)} data-testid="beo-anterior">
+                Anterior
+              </Link>
+            ) : null}
+            {nextStep ? (
+              <Link href={wizardStepHref(review.eventId, nextStep)} data-testid="beo-siguiente">
+                Siguiente
+              </Link>
+            ) : null}
+          </div>
+          {step.kind === "generar" && numbers[0] ? (
+            <p data-testid="siguiente-numero">Siguiente número {numbers[0]}</p>
+          ) : null}
+          {step.kind === "generar" && review.pendingCount === 0 ? (
             <div className="form-inline" data-testid="numeros-beo">
               {numbered.map((beo, index) => (
                 <label key={beo.id}>
@@ -344,14 +446,35 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
               ))}
             </div>
           ) : null}
+          {step.kind === "generar" ? (
+          <>
           <button
             type="button"
-            data-testid="confirmar-generar"
+            data-testid="generar-beo"
             disabled={busy || generateButtonState(review).disabled}
-            onClick={() => void generateDocuments()}
+            onClick={() => void generateDocuments("beos")}
           >
-            {busy ? "Generando…" : "Confirmar y generar"}
+            {busy ? "Generando…" : "Generar B.E.O."}
           </button>
+          <button
+            type="button"
+            data-testid="generar-memo"
+            disabled={busy || generateButtonState(review).disabled}
+            onClick={() => void generateDocuments("memos")}
+          >
+            {busy ? "Generando…" : "Generar memorándum"}
+          </button>
+          <button
+            type="button"
+            data-testid="generar-ambos"
+            disabled={busy || generateButtonState(review).disabled}
+            onClick={() => void generateDocuments("both")}
+          >
+            {busy ? "Generando…" : "Generar ambos"}
+          </button>
+          </>
+          ) : null}
+          {step.kind === "archivos" ? (
           <button
             type="button"
             data-testid="regenerar-seleccion"
@@ -365,15 +488,142 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
           >
             Regenerar seleccionados
           </button>
+          ) : null}
         </div>
       </header>
-      {generateButtonState(review).messages.length > 0 ? (
+      <div className="review-layout">
+        <nav className="review-nav" aria-label="Documentos del evento">
+          <h2>Pasos</h2>
+          <Link
+            href={wizardStepHref(review.eventId, { kind: "datos" })}
+            data-testid="paso-datos"
+            aria-current={step.kind === "datos" ? "page" : undefined}
+          >
+            Datos del evento
+          </Link>
+          <h2>B.E.O.</h2>
+          {review.beos.map((beo) => (
+            <div key={beo.id}>
+              <Link
+                href={wizardStepHref(review.eventId, { kind: "beo", id: beo.id })}
+                data-testid="beo-nav"
+                className={beoNeedsReview(beo, review.issues) ? "needs-review" : undefined}
+                aria-current={step.kind === "beo" && step.id === beo.id ? "page" : undefined}
+              >
+                <span>
+                  {beo.date.slice(8)}.{beo.date.slice(5, 7)}.{beo.date.slice(0, 4)} · {beo.salon}
+                </span>
+                <small>
+                  {beo.status === "voided" ? "Anulada" : (KIND_LABEL[beo.kind] ?? beo.kind)} ·{" "}
+                  {beo.pendingCount}
+                  {beo.version > 1 ? ` · v${beo.version}` : ""}
+                  {beoNeedsReview(beo, review.issues) ? (
+                    <>
+                      {" "}
+                      · <strong data-testid="senal-revisar">Revisar</strong>
+                    </>
+                  ) : null}
+                </small>
+              </Link>
+              {step.kind === "archivos" && beo.status === "generated" ? (
+                <label>
+                  <input
+                    type="checkbox"
+                    data-testid="elegir-regenerar"
+                    checked={chosenBeos.includes(beo.id)}
+                    onChange={() =>
+                      setChosenBeos((current) =>
+                        current.includes(beo.id)
+                          ? current.filter((id) => id !== beo.id)
+                          : [...current, beo.id],
+                      )
+                    }
+                  />
+                  Regenerar
+                </label>
+              ) : null}
+              {beo.status === "generated" ? (
+                <button
+                  type="button"
+                  data-testid="anular-beo"
+                  onClick={() =>
+                    void send({ action: "void-beo", beoId: beo.id }, "Se anuló la B.E.O.")
+                  }
+                >
+                  Anular
+                </button>
+              ) : null}
+            </div>
+          ))}
+          <Link
+            href={wizardStepHref(review.eventId, { kind: "generar" })}
+            data-testid="paso-generar"
+            aria-current={step.kind === "generar" ? "page" : undefined}
+          >
+            Generar
+          </Link>
+          <Link
+            href={wizardStepHref(review.eventId, { kind: "archivos" })}
+            data-testid="paso-archivos"
+            aria-current={step.kind === "archivos" ? "page" : undefined}
+          >
+            Archivos
+          </Link>
+          <h2>Memorándums</h2>
+          {review.memos.length === 0 ? <p>Ninguno</p> : null}
+          {review.memos.map((memo) => (
+            <div key={memo.id}>
+              <Link
+                href={wizardStepHref(review.eventId, { kind: "memo", id: memo.id })}
+                data-testid="memo-nav"
+                aria-current={step.kind === "memo" && step.id === memo.id ? "page" : undefined}
+              >
+                <span>
+                  {memo.name}
+                  {memo.stale ? " · desactualizado" : ""}
+                </span>
+                <small>
+                  {memo.pendingCount}
+                  {memo.version > 1 ? ` · v${memo.version}` : ""}
+                </small>
+              </Link>
+              {step.kind === "archivos" && memo.generated ? (
+                <label>
+                  <input
+                    type="checkbox"
+                    data-testid="elegir-memo"
+                    checked={chosenMemos.includes(memo.id)}
+                    onChange={() =>
+                      setChosenMemos((current) =>
+                        current.includes(memo.id)
+                          ? current.filter((id) => id !== memo.id)
+                          : [...current, memo.id],
+                      )
+                    }
+                  />
+                  Regenerar
+                </label>
+              ) : null}
+            </div>
+          ))}
+          <AddMemo
+            types={review.memoTypes.filter(
+              (type) => !review.memos.some((memo) => memo.memoTypeId === type.id),
+            )}
+            onAdd={(memoTypeId) =>
+              void send({ action: "add-memo", memoTypeId }, "Memorándum agregado.")
+            }
+          />
+        </nav>
+        <div className="review-step">
+      {(step.kind === "generar" || step.kind === "beo") && generateButtonState(review).messages.length > 0 ? (
         <ul className="alert" data-testid="errores-validacion">
           {review.issues.map((issue) => (
             <li key={`${issue.beo}-${issue.field}`}>{issue.message}</li>
           ))}
         </ul>
       ) : null}
+      {step.kind === "beo" ? (
       <form
         className="form-inline"
         data-testid="caso-dorado"
@@ -408,15 +658,41 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
           {review.goldenCandidate ? "Caso dorado candidato" : "Marcar como caso dorado"}
         </button>
       </form>
+      ) : null}
       {error ? <p className="alert">{error}</p> : null}
       {message ? (
         <p className="notice" data-testid="generacion">
           {message}
         </p>
       ) : null}
-      {files.length > 0 ? (
+      {step.kind === "archivos" && files.length > 0 ? (
         <section className="downloads" data-testid="descargas">
           {driveNotice ? <p data-testid="drive-aviso">{driveNotice}</p> : null}
+          <table data-testid="tabla-archivos">
+            <thead>
+              <tr>
+                <th>Evento</th>
+                <th>Número</th>
+                <th>Lugar</th>
+                <th>Fecha</th>
+                <th>Contenido</th>
+              </tr>
+            </thead>
+            <tbody>
+              {files.map((file) => {
+                const row = rowFor(review, file);
+                return (
+                  <tr key={file.id} data-testid="fila-archivo">
+                    <td>{row.event}</td>
+                    <td>{row.number}</td>
+                    <td>{row.salon}</td>
+                    <td>{row.date}</td>
+                    <td>{row.content}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
           {files.map((file) => (
             <p key={file.id}>
               {file.voided ? (
@@ -505,7 +781,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
         </section>
       ) : null}
 
-      {review.arithmetic.length > 0 ? (
+      {step.kind === "datos" && review.arithmetic.length > 0 ? (
         <section data-testid="alertas-montos">
           <h2>Alertas de montos</h2>
           {review.arithmetic.map((issue) => (
@@ -521,7 +797,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
         </section>
       ) : null}
 
-      {review.ocrFields.length > 0 ? (
+      {step.kind === "datos" && review.ocrFields.length > 0 ? (
         <section data-testid="lectura-escaneo">
           <h2>Lectura del escaneo</h2>
           {review.handwriting.map((note) => (
@@ -535,16 +811,16 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
             </p>
           ))}
           {review.ocrFields.map((field) => {
-            const open = field.status !== "RULE";
+            const highlighted = field.status === "VALIDATE";
             return (
               <label
                 key={field.key}
-                className={`review-field ${open ? "field-pending" : "field-rule"}`}
-                data-testid={open ? "campo-abierto" : "campo"}
+                className={`review-field ${highlighted ? "field-pending" : "field-rule"}`}
+                data-testid="campo"
               >
                 <span>
                   {field.label}
-                  {open ? <em className="badge">Validar</em> : null}
+                  {highlighted ? <em className="badge">Validar</em> : null}
                 </span>
                 {field.amountVerified ? <small>Monto verificado</small> : null}
                 {field.cropId ? (
@@ -560,7 +836,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
                   key={`${field.key}-${field.value}-${field.status}`}
                   onBlur={(event) => void saveOcr(field.key, event.target.value)}
                 />
-                {open ? (
+                {highlighted ? (
                   <button
                     type="button"
                     onMouseDown={(event) => event.preventDefault()}
@@ -575,6 +851,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
         </section>
       ) : null}
 
+      {step.kind === "datos" ? (
       <section className="review-shared" data-testid="datos-compartidos">
         <h2>Datos del evento</h2>
         <div className="form-inline">
@@ -595,109 +872,10 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
           </button>
         </div>
       </section>
+      ) : null}
 
-      <div className="review-layout">
-        <nav className="review-nav" aria-label="Documentos del evento">
-          <h2>B.E.O.</h2>
-          {review.beos.map((beo) => (
-            <div key={beo.id}>
-              <button
-                type="button"
-                data-testid="beo-nav"
-                aria-current={beo.id === selected?.id ? "page" : undefined}
-                onClick={() => {
-                  setSelectedMemoId(null);
-                  setSelectedId(beo.id);
-                }}
-              >
-                <span>
-                  {beo.date.slice(8)}.{beo.date.slice(5, 7)}.{beo.date.slice(0, 4)} · {beo.salon}
-                </span>
-                <small>
-                  {beo.status === "voided" ? "Anulada" : (KIND_LABEL[beo.kind] ?? beo.kind)} ·{" "}
-                  {beo.pendingCount}
-                  {beo.version > 1 ? ` · v${beo.version}` : ""}
-                </small>
-              </button>
-              {beo.status === "generated" ? (
-                <label>
-                  <input
-                    type="checkbox"
-                    data-testid="elegir-regenerar"
-                    checked={chosenBeos.includes(beo.id)}
-                    onChange={() =>
-                      setChosenBeos((current) =>
-                        current.includes(beo.id)
-                          ? current.filter((id) => id !== beo.id)
-                          : [...current, beo.id],
-                      )
-                    }
-                  />
-                  Regenerar
-                </label>
-              ) : null}
-              {beo.status === "generated" ? (
-                <button
-                  type="button"
-                  data-testid="anular-beo"
-                  onClick={() =>
-                    void send({ action: "void-beo", beoId: beo.id }, "Se anuló la B.E.O.")
-                  }
-                >
-                  Anular
-                </button>
-              ) : null}
-            </div>
-          ))}
-          <h2>Memorándums</h2>
-          {review.memos.length === 0 ? <p>Ninguno</p> : null}
-          {review.memos.map((memo) => (
-            <div key={memo.id}>
-              <button
-                type="button"
-                data-testid="memo-nav"
-                aria-current={memo.id === selectedMemo?.id ? "page" : undefined}
-                onClick={() => setSelectedMemoId(memo.id)}
-              >
-                <span>
-                  {memo.name}
-                  {memo.stale ? " · desactualizado" : ""}
-                </span>
-                <small>
-                  {memo.pendingCount}
-                  {memo.version > 1 ? ` · v${memo.version}` : ""}
-                </small>
-              </button>
-              {memo.generated ? (
-                <label>
-                  <input
-                    type="checkbox"
-                    data-testid="elegir-memo"
-                    checked={chosenMemos.includes(memo.id)}
-                    onChange={() =>
-                      setChosenMemos((current) =>
-                        current.includes(memo.id)
-                          ? current.filter((id) => id !== memo.id)
-                          : [...current, memo.id],
-                      )
-                    }
-                  />
-                  Regenerar
-                </label>
-              ) : null}
-            </div>
-          ))}
-          <AddMemo
-            types={review.memoTypes.filter(
-              (type) => !review.memos.some((memo) => memo.memoTypeId === type.id),
-            )}
-            onAdd={(memoTypeId) =>
-              void send({ action: "add-memo", memoTypeId }, "Memorándum agregado.")
-            }
-          />
-        </nav>
 
-        {selectedMemo ? (
+        {step.kind === "memo" && selectedMemo ? (
           <MemoView
             memo={selectedMemo}
             onField={(key, value) =>
@@ -713,7 +891,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
               )
             }
           />
-        ) : selected ? (
+        ) : step.kind === "beo" && selected ? (
           <BeoView
             beo={selected}
             others={review.beos.filter(
@@ -765,9 +943,10 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
               })
             }
           />
-        ) : (
+        ) : step.kind === "beo" ? (
           <p>Este evento no tiene B.E.O. propuestas.</p>
-        )}
+        ) : null}
+        </div>
       </div>
     </main>
   );
@@ -831,7 +1010,7 @@ function MemoView({
         </p>
       ) : null}
       {memo.fields.map((field) => {
-        const open = field.status !== "RULE";
+        const open = needsAction(field.status);
         const mark = badge(field.status);
         const label = FIELD_LABELS[field.key] ?? field.key;
         return (
@@ -1078,7 +1257,7 @@ function FieldBox({
 }) {
   const [remember, setRemember] = useState(false);
   if (!field) return null;
-  const open = field.status !== "RULE";
+  const open = needsAction(field.status);
   const mark = badge(field.status);
   return (
     <label
@@ -1131,7 +1310,7 @@ function LineBox({
   onSave: (line: ReviewLine, qty: number, description: string, unitPrice: string) => void;
   onDelete: (lineId: string) => void;
 }) {
-  const open = line.status !== "RULE";
+  const open = needsAction(line.status);
   const price = line.unitPriceCents === null ? "" : formatAmount(line.unitPriceCents);
   return (
     <div
@@ -1202,44 +1381,69 @@ function AddLine({
     unitPrice: string,
   ) => void;
 }) {
+  const dialog = useRef<HTMLDialogElement>(null);
   const [description, setDescription] = useState("");
   const [qty, setQty] = useState("1");
   const [price, setPrice] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  function open() {
+    setQty("1");
+    setDescription("");
+    setPrice("");
+    setLocalError(null);
+    dialog.current?.showModal();
+  }
+
   return (
-    <form
-      className="add-line"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onAdd(section, groupName, Number(qty), description, price);
-        setDescription("");
-        setPrice("");
-      }}
-    >
-      <label>
-        Cantidad
-        <input
-          aria-label={`Cantidad nueva ${section}`}
-          value={qty}
-          onChange={(event) => setQty(event.target.value)}
-        />
-      </label>
-      <label>
-        Descripción
-        <input
-          aria-label={`Descripción nueva ${section}`}
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-        />
-      </label>
-      <label>
-        Precio
-        <input
-          aria-label={`Precio nuevo ${section}`}
-          value={price}
-          onChange={(event) => setPrice(event.target.value)}
-        />
-      </label>
-      <button type="submit">Agregar línea</button>
-    </form>
+    <div className="add-line">
+      <button type="button" onClick={open}>
+        Agregar línea
+      </button>
+      <dialog ref={dialog} className="line-dialog" data-testid="ventana-linea">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const parsed = Number(qty);
+            if (!description.trim() || !Number.isInteger(parsed) || parsed < 0) {
+              setLocalError("La línea necesita cantidad y descripción.");
+              return;
+            }
+            onAdd(section, groupName, parsed, description.trim(), price);
+            dialog.current?.close();
+          }}
+        >
+          <label>
+            Cantidad
+            <input
+              aria-label={`Cantidad nueva ${section}`}
+              value={qty}
+              onChange={(event) => setQty(event.target.value)}
+            />
+          </label>
+          <label>
+            Descripción
+            <input
+              aria-label={`Descripción nueva ${section}`}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+            />
+          </label>
+          <label>
+            Precio
+            <input
+              aria-label={`Precio nuevo ${section}`}
+              value={price}
+              onChange={(event) => setPrice(event.target.value)}
+            />
+          </label>
+          {localError ? <p className="alert">{localError}</p> : null}
+          <button type="submit">Agregar</button>
+          <button type="button" onClick={() => dialog.current?.close()}>
+            Cerrar
+          </button>
+        </form>
+      </dialog>
+    </div>
   );
 }

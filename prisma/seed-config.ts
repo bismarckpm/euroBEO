@@ -9,6 +9,7 @@ import {
   seedMemoType,
   seedSalons,
   seedSectionMappings,
+  seedMemoSequence,
   seedSequence,
 } from "../src/core/config/seed-data";
 
@@ -126,6 +127,11 @@ async function seedBeoSequence(): Promise<void> {
   await prisma.sequence.upsert({
     where: { key: seedSequence.key },
     create: seedSequence,
+    update: {},
+  });
+  await prisma.sequence.upsert({
+    where: { key: seedMemoSequence.key },
+    create: seedMemoSequence,
     update: {},
   });
 }

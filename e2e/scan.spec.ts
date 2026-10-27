@@ -84,7 +84,9 @@ test("sube el escaneo de Calox, valida la cabecera y genera la B.E.O.", async ({
       throw new Error("La carga no ofreció la revisión.");
     }
     await page.goto(href);
-    await expect(page.getByRole("heading", { name: "Revisión" })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole("heading", { name: "Datos del evento" }).first()).toBeVisible({
+      timeout: 60_000,
+    });
     await expect(page.getByRole("heading", { name: "Lectura del escaneo" })).toBeVisible();
 
     const executive = page.getByLabel("Ejecutiva");
@@ -96,21 +98,23 @@ test("sube el escaneo de Calox, valida la cabecera y genera la B.E.O.", async ({
     await savedExecutive;
     await expect(page.getByLabel("Ejecutiva")).toHaveValue("Jeannette García");
 
-    const salon = page.getByLabel("Salón").first();
-    if ((await salon.count()) > 0 && (await salon.inputValue()).trim() === "") {
-      await salon.fill("Stand Calox");
-      await salon.press("Tab");
-    }
-
     const nav = page.getByTestId("beo-nav");
     const total = await nav.count();
     for (let index = 0; index < total; index += 1) {
       await nav.nth(index).click();
+      await expect(nav.nth(index)).toHaveAttribute("aria-current", "page");
+      const salon = page.getByLabel("Salón").first();
+      if ((await salon.count()) > 0 && (await salon.inputValue()).trim() === "") {
+        await salon.fill("Stand Calox");
+        await salon.press("Tab");
+      }
       await clearSelected(page);
     }
     await clearSelected(page);
     await expect(page.getByTestId("pendientes-evento")).toHaveText("Sin pendientes", { timeout: 30_000 });
-    await page.getByTestId("confirmar-generar").click();
+    await page.getByTestId("paso-generar").click();
+    await expect(page).toHaveURL(/\/asistente\/generar/);
+    await page.getByTestId("generar-ambos").click();
     await expect(page.getByTestId("generacion")).toContainText("Se inició la generación", { timeout: 120_000 });
     await expect(page.getByTestId("descargas")).toContainText("B.E.O.");
   } finally {

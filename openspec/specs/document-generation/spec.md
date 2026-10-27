@@ -82,8 +82,12 @@ La plantilla MUST imprimir cada ítem de alimentos con el título en negrita, su
 - **THEN** la columna Alimentos y Bebidas muestra el título, la línea del menú, "N° pax: 150" y "Precio: USD 2,00 c/u x pax"
 
 ### Requirement: Validación previa al render
-Antes de generar, el sistema MUST validar los datos de cada B.E.O. y MUST bloquear la generación indicando B.E.O. y campo cuando: una línea no tiene sección, hay alimentos en el presupuesto pero la sección Alimentos y Bebidas está vacía, un ítem de alimentos no tiene precio, una línea de personal no tiene subgrupo, o algún texto a imprimir contiene el estado "Pendiente".
+Antes de generar, el sistema MUST bloquear la generación, indicando B.E.O. y campo, solo cuando algo del presupuesto no llegó a la B.E.O.: una línea sin sección, personal sin subgrupo, alimentos del presupuesto ausentes de la B.E.O., o un texto a imprimir con el estado "Pendiente". MUST NOT exigir precios, secciones ni datos que el presupuesto no trae.
 
 #### Scenario: Comida sin clasificar
 - **WHEN** un ítem de comida quedó sin sección
 - **THEN** no se genera el documento y se indica qué ítem y en qué B.E.O. falta clasificar
+
+#### Scenario: Alimento sin precio
+- **WHEN** un ítem de alimentos viene en el presupuesto sin precio
+- **THEN** la B.E.O. se genera mostrando el ítem sin línea de precio

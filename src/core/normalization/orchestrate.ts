@@ -1,4 +1,5 @@
 import { classifyItem } from "../beo/classify";
+import { cleanPlace } from "../budget/field-status";
 import { tracked, type FieldStatus, type ParsedBudget } from "../budget/model";
 import { normalizeLabel } from "../config/normalize";
 import { maskFragment, type ClientMaskData } from "./mask";
@@ -117,9 +118,13 @@ export async function normalizeBudget(
         block.schedule.status === "PENDING" ? usable(block.schedule.value) : null;
       const setupText = block.setup.status === "PENDING" ? usable(block.setup.value) : null;
 
-      const salonLearned = await learnedBlock(deps, salonText);
-      if (salonText && salonLearned?.salon) {
-        block.salon = tracked(salonLearned.salon, "RULE");
+      if (salonText) {
+        const salonLearned = await learnedBlock(deps, salonText);
+        block.salon = salonLearned?.salon
+          ? tracked(salonLearned.salon, "RULE")
+          : tracked(cleanPlace(salonText), "RULE");
+      } else if (block.salon.status === "PENDING") {
+        block.salon = tracked(null, "ABSENT");
       }
       const scheduleLearned = await learnedBlock(deps, scheduleText);
       if (scheduleText && scheduleLearned?.scheduleStart && scheduleLearned.scheduleEnd) {
@@ -134,7 +139,6 @@ export async function normalizeBudget(
       }
 
       const pending = [
-        block.salon.status === "PENDING" ? salonText : null,
         block.schedule.status === "PENDING" ? scheduleText : null,
         block.setup.status === "PENDING" ? setupText : null,
       ].filter((part): part is string => part !== null);
@@ -145,7 +149,6 @@ export async function normalizeBudget(
           ? validateBlockFields(blockPayload(asked.payload), deps.catalog)
           : null;
         const accepted = Boolean(
-          (salonText && block.salon.status === "PENDING" && fields?.salon) ||
           (scheduleText &&
             block.schedule.status === "PENDING" &&
             fields?.scheduleStart &&
@@ -163,9 +166,6 @@ export async function normalizeBudget(
         }
         if (fields && asked.called) {
           const status = statusFor(true);
-          if (salonText && block.salon.status === "PENDING" && fields.salon) {
-            block.salon = tracked(fields.salon, status);
-          }
           if (
             scheduleText &&
             block.schedule.status === "PENDING" &&

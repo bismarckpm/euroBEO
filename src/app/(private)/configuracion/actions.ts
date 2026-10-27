@@ -18,6 +18,7 @@ import {
   saveMapping,
   saveMemo,
   saveSalon,
+  saveMemoSequence,
   saveSequence,
   listFixedTexts,
 } from "@/lib/catalog-db";
@@ -284,6 +285,16 @@ export async function changeSequence(formData: FormData): Promise<void> {
   await requireSession();
   try {
     await saveSequence(text(formData, "code"));
+  } catch (error) {
+    fail("correlativo", error);
+  }
+  redirect("/configuracion?tab=correlativo&guardado=1");
+}
+
+export async function changeMemoSequence(formData: FormData): Promise<void> {
+  await requireSession();
+  try {
+    await saveMemoSequence(text(formData, "memoLast"));
   } catch (error) {
     fail("correlativo", error);
   }

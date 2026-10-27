@@ -1,5 +1,6 @@
+import { redirect } from "next/navigation";
+import { entryWizardStep, wizardStepHref } from "@/core/review/guide";
 import { ReviewError, getEventReview } from "@/lib/event-review";
-import { ReviewScreen } from "./review-screen";
 
 export default async function EventReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -13,10 +14,15 @@ export default async function EventReviewPage({ params }: { params: Promise<{ id
   if (!loaded.review) {
     return (
       <main className="panel">
-        <h1>Revisión</h1>
+        <h1>Evento</h1>
         <p className="alert">{loaded.message}</p>
       </main>
     );
   }
-  return <ReviewScreen initial={loaded.review} />;
+  const step = entryWizardStep({
+    beos: loaded.review.beos,
+    issues: loaded.review.issues,
+    memos: loaded.review.memos.map((memo) => ({ id: memo.id, pendingCount: memo.pendingCount })),
+  });
+  redirect(wizardStepHref(id, step));
 }
