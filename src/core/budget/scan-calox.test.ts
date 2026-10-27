@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { proposeBeos } from "../beo/propose";
+import { currentFixedTexts } from "../config/fixed-texts";
 import { normalizeLabel } from "../config/normalize";
-import { seedCatalogItems, seedSalons, seedSectionMappings } from "../config/seed-data";
+import { seedCatalogItems, seedFixedTexts, seedSalons, seedSectionMappings } from "../config/seed-data";
+import { validateBeoLines } from "../documents/validate-beo";
 import type { BudgetCatalog } from "./parse-budget";
 import type { ParsedBudget } from "./model";
 import { readBudgetPdf } from "../../lib/budget-ingest";
@@ -92,6 +95,46 @@ export function assertCaloxCells(budget: ParsedBudget, expected: ExpectedCells):
   expect(budget.totals.general).toBe(cents(expected.totals.totalEvento));
   expect(block?.sections.map((section) => section.target.value)).toEqual(["ALIMENTOS", "PERSONAL"]);
   expect(budget.arithmetic?.some((issue) => issue.cell === "Logística") ?? false).toBe(false);
+  expect(block?.salon).toEqual({ value: "Stand Calox", status: "RULE" });
+  expect(block?.pax.status).toBe("ABSENT");
+  const drafts = proposeBeos(budget, currentFixedTexts(seedFixedTexts));
+  expect(drafts.length).toBeGreaterThan(0);
+  for (const draft of drafts) {
+    const fields = [
+      draft.salonName,
+      draft.guarantee,
+      draft.billboard,
+      draft.schedule,
+      draft.setup,
+      draft.company,
+      draft.contact,
+      draft.phone,
+      draft.address,
+    ];
+    expect(fields.some((field) => field.status === "PENDING")).toBe(false);
+    expect(validateBeoLines(draft.salon || "evento", [
+      ...draft.food.map((line) => ({
+        section: line.section,
+        groupName: line.group,
+        description: line.description,
+        unitPriceCents: line.unitPriceCents,
+        text: line.text,
+      })),
+      ...draft.sections.flatMap((section) =>
+        section.groups.flatMap((group) =>
+          group.lines.map((line) => ({
+            section: section.section,
+            groupName: group.name,
+            description: line.description,
+            unitPriceCents: line.unitPriceCents,
+            text: line.text,
+          })),
+        ),
+      ),
+    ])).toEqual([]);
+  }
+  expect(drafts[0]?.salonName).toMatchObject({ value: "Stand Calox", status: "RULE" });
+  expect(drafts.every((draft) => draft.guarantee.status === "ABSENT")).toBe(true);
 }
 
 describe("escaneo de Calox", () => {

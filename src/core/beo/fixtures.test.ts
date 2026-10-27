@@ -62,12 +62,12 @@ describe.skipIf(!available)("propuesta contra los presupuestos de ejemplo", () =
     expect(topacio.map((draft) => draft.rentCents.value)).toEqual([292500, 292500]);
     const setup = drafts.find((draft) => draft.kind === "MONTAJE" && draft.salon === "Zafiro");
     expect(setup?.guarantee.value).toBeNull();
-    expect(setup?.guarantee.status).toBe("RULE");
-    expect(setup?.guarantee.source).toBe("rule:rn-19");
+    expect(setup?.guarantee.status).toBe("ABSENT");
+    expect(setup?.guarantee.source).toBe("budget.pax");
     expect(setup?.rentCents.value).toBeNull();
     expect(setup?.weekday.value).toBe("Jueves");
     expect(setup?.billboard.value).toContain("REUMATOLOG");
-    expect(setup?.billboard.status).toBe("PENDING");
+    expect(setup?.billboard.status).toBe("RULE");
   });
 
   it("propone tantas B.E.O. de salón como las emitidas de Congreso Pets", async () => {

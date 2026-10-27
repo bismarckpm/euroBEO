@@ -20,7 +20,12 @@ import {
 } from "./event-memos";
 import { NormalizationInputError, saveLearnedNormalization } from "./normalization";
 
-const OPEN_STATUS = new Set(["PENDING", "AI", "REVIEW", "VALIDATE"]);
+const OPEN_STATUS = new Set(["PENDING", "AI", "REVIEW"]);
+
+/** Pendiente, IA y Revisar bloquean. Validar (OCR) y Sin dato no entran en el contador. */
+export function countsTowardPending(status: string): boolean {
+  return OPEN_STATUS.has(status);
+}
 const SHARED_KEYS = ["billboard", "company", "contact", "phone"] as const;
 const KIND_ORDER: Record<string, number> = { MONTAJE: 0, EVENTO: 1, DESMONTAJE: 2 };
 
@@ -130,7 +135,7 @@ function readJson<T>(schema: z.ZodType<T>, value: unknown, fallback: T): T {
 }
 
 function isOpen(status: string): boolean {
-  return OPEN_STATUS.has(status);
+  return countsTowardPending(status);
 }
 
 function pendingOf(fields: { status: string }[], lines: { status: string }[]): number {
@@ -261,7 +266,7 @@ function toReview(
     pendingCount:
       active.reduce((sum, beo) => sum + beo.pendingCount, 0) +
       memos.reduce((sum, memo) => sum + memo.pendingCount, 0) +
-      ocrFields.filter((field) => field.status !== "RULE").length,
+      ocrFields.filter((field) => countsTowardPending(field.status)).length,
     issues: active.flatMap((beo) =>
       validateBeoLines(`${beo.salon} ${beo.date}`, beo.lines),
     ),

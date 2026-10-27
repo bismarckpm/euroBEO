@@ -57,13 +57,13 @@ function budget(days: ParsedBudget["days"], title = "CONGRESO NACIONAL"): Parsed
 }
 
 describe("garantía de montaje", () => {
-  it("deja vacía y en regla la garantía de un montaje sin pax", () => {
+  it("deja vacía y en Sin dato la garantía de un montaje sin pax", () => {
     const drafts = proposeBeos(
       budget([
         {
           dates: ["2026-10-22"],
           raw: "22",
-          blocks: [block({ kind: "MONTAJE" })],
+          blocks: [block({ kind: "MONTAJE", pax: tracked(null, "ABSENT") })],
         },
       ]),
       texts,
@@ -72,7 +72,7 @@ describe("garantía de montaje", () => {
     expect(drafts[0]).toMatchObject({
       kind: "MONTAJE",
       salon: "Zafiro",
-      guarantee: { value: null, status: "RULE", source: "rule:rn-19" },
+      guarantee: { value: null, status: "ABSENT", source: "budget.pax" },
       rentCents: { value: null, status: "RULE", source: "rule:rn-19" },
     });
   });
@@ -246,6 +246,41 @@ describe("reparto de la propuesta", () => {
     expect(drafts).toHaveLength(1);
     expect(drafts[0]?.salonName.value).toBe("Turmalina - Ópalo");
   });
+
+  it("separa un stand y una piscina el mismo día", () => {
+    const drafts = proposeBeos(
+      budget([
+        {
+          dates: ["2026-10-07"],
+          raw: "07",
+          blocks: [
+            block({ kind: "EVENTO", salon: tracked("Stand Calox", "RULE"), salonRaw: "Stand Calox" }),
+            block({ kind: "EVENTO", salon: tracked("Piscina", "RULE"), salonRaw: "Piscina" }),
+          ],
+        },
+      ]),
+      texts,
+    );
+    expect(drafts.map((draft) => draft.salon).sort()).toEqual(["Piscina", "Stand Calox"]);
+  });
+
+  it("junta el mismo lugar aunque cambien mayúsculas o acentos", () => {
+    const drafts = proposeBeos(
+      budget([
+        {
+          dates: ["2026-10-07"],
+          raw: "07",
+          blocks: [
+            block({ kind: "EVENTO", salon: tracked("Piscina", "RULE"), salonRaw: "Piscina" }),
+            block({ kind: "MONTAJE", salon: tracked("piscina", "RULE"), salonRaw: "piscina" }),
+          ],
+        },
+      ]),
+      texts,
+    );
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]?.kind).toBe("EVENTO");
+  });
 });
 
 describe("campos de la propuesta", () => {
@@ -293,7 +328,7 @@ describe("campos de la propuesta", () => {
     const draft = drafts[0];
     expect(draft?.salonName.value).toBe("Plaza Real");
     expect(draft?.eventType.value).toBe("Cena");
-    expect(draft?.billboard).toMatchObject({ value: "CENA DE GALA", status: "PENDING" });
+    expect(draft?.billboard).toMatchObject({ value: "CENA DE GALA", status: "RULE" });
     expect(draft?.rentCents.value).toBe(741500);
     expect(draft?.food[0]?.text).toContain("N° pax: 700");
     expect(draft?.food[0]?.text).toContain("Precio: USD 4,00 c/u x pax");

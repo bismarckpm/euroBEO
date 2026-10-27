@@ -14,7 +14,7 @@ El sistema MUST mostrar para cada evento la lista de B.E.O. propuestas (día, sa
 - **THEN** ve 6 B.E.O. ordenadas por fecha y salón con su contador de pendientes
 
 ### Requirement: Estado visible por campo
-Cada campo MUST mostrar su estado: Regla (sin marca), IA (resaltado para validar) o Pendiente (dato faltante obligatorio).
+Cada campo MUST mostrar su estado: Regla (sin marca), IA (resaltado para validar), Pendiente (vino en el presupuesto y no se pudo interpretar, leer o clasificar), Sin dato (el presupuesto no lo trae; vacío y sin acción requerida) o Validar (leído por OCR; resaltado, sin sumar al contador y sin bloquear la generación).
 
 #### Scenario: Campo interpretado por IA
 - **WHEN** el horario de una B.E.O. fue interpretado por la IA
@@ -23,6 +23,14 @@ Cada campo MUST mostrar su estado: Regla (sin marca), IA (resaltado para validar
 #### Scenario: Validar un campo
 - **WHEN** la asistente valida un campo con estado IA
 - **THEN** el campo pasa a estado confirmado y el contador se actualiza
+
+#### Scenario: Campo sin dato
+- **WHEN** la garantía de una B.E.O. tiene estado "Sin dato"
+- **THEN** se muestra vacía, no suma al contador de pendientes y la asistente puede completarla si quiere
+
+#### Scenario: Lectura de OCR
+- **WHEN** la empresa leída por OCR está en "Validar"
+- **THEN** el campo se muestra resaltado, no suma al contador de pendientes y "Confirmar y generar" sigue habilitado si no hay otro pendiente
 
 ### Requirement: Edición de campos y líneas
 La asistente MUST poder editar cualquier campo y agregar, quitar o modificar líneas (cantidad, descripción, precio unitario, sección), y cada edición MUST quedar en auditoría con valor anterior y nuevo.
@@ -57,10 +65,10 @@ La asistente MUST poder unir dos B.E.O. propuestas del mismo día o separar una 
 - **THEN** quedan dos B.E.O., cada una con las líneas de su salón
 
 ### Requirement: Confirmar y generar
-El botón "Confirmar y generar" MUST habilitarse solo cuando el evento no tenga campos pendientes y la validación previa al render no reporte errores; al pulsarlo MUST iniciar la generación de todas las B.E.O. y memorándums del evento.
+El botón "Confirmar y generar" MUST habilitarse cuando no haya campos "Pendiente" ni errores de la validación previa. Los campos "Sin dato" y "Validar" MUST NOT impedirlo ni sumar al contador. Al pulsarlo MUST iniciar la generación de todas las B.E.O. y memorándums del evento.
 
 #### Scenario: Campos pendientes
-- **WHEN** queda al menos un campo pendiente en el evento
+- **WHEN** queda al menos un campo con estado "Pendiente" en el evento
 - **THEN** el botón está deshabilitado y muestra cuántos faltan
 
 #### Scenario: Errores de validación
@@ -71,6 +79,14 @@ El botón "Confirmar y generar" MUST habilitarse solo cuando el evento no tenga 
 - **WHEN** no quedan pendientes ni errores y la asistente pulsa "Confirmar y generar"
 - **THEN** se inicia la generación de documentos del evento
 
+#### Scenario: Solo campos sin dato
+- **WHEN** el evento de Calox tiene la garantía en "Sin dato" y ningún campo "Pendiente"
+- **THEN** el botón está habilitado y la B.E.O. se genera con la garantía vacía
+
+#### Scenario: OCR sin confirmar
+- **WHEN** el escaneo de Calox tiene campos en "Validar" y ningún campo "Pendiente"
+- **THEN** el contador queda en cero y el botón genera la B.E.O.
+
 ### Requirement: Registrar B.E.O. corregida como caso dorado
 La asistente MUST poder adjuntar, para un evento, la B.E.O. correcta en .docx o PDF y marcarla como caso dorado candidato, para que el equipo técnico la incorpore a la suite de regresión.
 
@@ -79,11 +95,11 @@ La asistente MUST poder adjuntar, para un evento, la B.E.O. correcta en .docx o 
 - **THEN** el evento queda marcado como caso dorado candidato con el presupuesto y la B.E.O. de referencia
 
 ### Requirement: Validación de valores leídos por OCR
-En eventos originados en un escaneo, cada valor leído por OCR MUST mostrarse con estado "validar" junto al recorte de la imagen de donde se leyó, excepto los montos de fila que no generan alerta. Los datos de cabecera y del cliente MUST quedar siempre para validar. Las alertas de montos MUST mostrarse en la revisión de presupuestos digitales y escaneados, sin bloquear la generación.
+En eventos originados en un escaneo, cada valor leído por OCR MUST mostrarse resaltado con estado "Validar" junto al recorte de la imagen de donde se leyó, excepto los montos de fila que no generan alerta. Los datos de cabecera y del cliente MUST quedar en "Validar". Ese estado MUST NOT sumar al contador de pendientes ni bloquear "Confirmar y generar". Las alertas de montos MUST mostrarse en la revisión de presupuestos digitales y escaneados, sin bloquear la generación.
 
 #### Scenario: Nombre de la ejecutiva
 - **WHEN** el OCR lee "Jeamette García" en la cabecera
-- **THEN** el campo aparece para validar con el recorte de la imagen al lado y la asistente lo corrige a "Jeannette García"
+- **THEN** el campo aparece resaltado con el recorte de la imagen al lado y la asistente puede corregirlo a "Jeannette García" sin que ese campo impida generar
 
 #### Scenario: Monto verificado
 - **WHEN** el total de la fila "Asistentes de servicio" cuadra con cantidad por tarifa

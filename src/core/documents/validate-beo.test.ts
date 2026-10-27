@@ -81,7 +81,7 @@ describe("validación previa al render", () => {
     expect(issues.some((issue) => issue.message.includes("Alimentos y Bebidas"))).toBe(false);
   });
 
-  it("exige precio en un alimento", () => {
+  it("genera un alimento sin precio", () => {
     const issues = validateBeoLines("Topacio 22/10/2026", [
       {
         section: "ALIMENTOS",
@@ -91,9 +91,12 @@ describe("validación previa al render", () => {
         text: "Cena",
       },
     ]);
-    expect(issues.some((issue) => issue.message.includes("no tiene precio") && issue.beo.includes("Topacio"))).toBe(
-      true,
-    );
+    expect(issues.some((issue) => issue.message.includes("precio"))).toBe(false);
+    expect(generateButtonState({ pendingCount: 0, issues }).disabled).toBe(false);
+  });
+
+  it("no alerta si el evento no trae alimentos ni personal", () => {
+    expect(validateBeoLines("Piscina 07/10/2026", [])).toEqual([]);
   });
 
   it("exige subgrupo en el personal", () => {

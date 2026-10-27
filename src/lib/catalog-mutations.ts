@@ -4,6 +4,7 @@ import { normalizeLabel } from "../core/config/normalize";
 import { isBlockHeaderKind, type BlockHeaderKind } from "../core/config/block-headers";
 import { isBeoSection, type BeoSection } from "../core/config/sections";
 import { parseBeoNumber, type SequenceState } from "../core/config/sequence";
+import { parseMemoNumber } from "../core/memo/number";
 import { recordAudit, type AuditStore, type JsonValue } from "./audit";
 
 export class CatalogValidationError extends Error {
@@ -577,4 +578,31 @@ export async function setSequence(
     auditStore,
   );
   return parsedCode;
+}
+
+export async function setMemoSequence(
+  input: { lastNumber: string },
+  db: {
+    read(): Promise<number | null>;
+    save(lastNumber: number): Promise<void>;
+  },
+  auditStore?: AuditStore,
+): Promise<number> {
+  const parsed = parseMemoNumber(input.lastNumber);
+  if (parsed === null) {
+    throw new CatalogValidationError("El último número de memorándum debe ser un entero, por ejemplo 89.");
+  }
+  const before = await db.read();
+  await db.save(parsed);
+  await audit(
+    {
+      action: "sequence.update",
+      entity: "Sequence",
+      entityId: "memo",
+      before: before === null ? null : { lastNumber: before },
+      after: { lastNumber: parsed },
+    },
+    auditStore,
+  );
+  return parsed;
 }

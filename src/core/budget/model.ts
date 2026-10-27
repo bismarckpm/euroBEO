@@ -1,4 +1,4 @@
-export type FieldStatus = "RULE" | "AI" | "PENDING";
+export type FieldStatus = "RULE" | "AI" | "PENDING" | "ABSENT";
 
 export type Tracked<T> = {
   value: T;

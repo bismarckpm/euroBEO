@@ -127,3 +127,9 @@ export const seedSequence = {
   lastNumber: 0,
   year: 26,
 };
+
+export const seedMemoSequence = {
+  key: "memo",
+  lastNumber: 0,
+  year: 0,
+};

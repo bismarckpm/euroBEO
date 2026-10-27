@@ -102,10 +102,12 @@ describe("validateBlockFields", () => {
     expect(invalid).toMatchObject({ salon: null, scheduleStart: null, pax: null });
   });
 
-  it("incluye en el prompt solo el catálogo cerrado", () => {
+  it("no pide el lugar ni la lista de salones", () => {
     const prompt = promptFor("block_fields", catalog);
-    expect(prompt).toContain("Diamante");
-    expect(prompt).toContain("Topacio");
+    expect(prompt).not.toContain("salonCandidates");
+    expect(prompt).not.toContain("Diamante");
+    expect(prompt).not.toContain("Topacio");
+    expect(prompt).toContain("scheduleStart");
     expect(prompt).not.toContain("Droguería");
   });
 });
@@ -143,12 +145,13 @@ describe("normalizeBudget", () => {
     expect(provider.complete).not.toHaveBeenCalled();
   });
 
-  it("guarda el horario válido con estado IA", async () => {
+  it("guarda el horario válido con estado IA y no manda el lugar", async () => {
+    const fragments: string[] = [];
     const provider: NormalizationProvider = {
       complete: async (request) => {
         if (request.task === "block_fields") {
+          fragments.push(request.fragment);
           return {
-            salonCandidates: ["Topacio"],
             scheduleStart: "08:00",
             scheduleEnd: "18:00",
             setupType: null,
@@ -164,47 +167,53 @@ describe("normalizeBudget", () => {
       findLearned: async () => null,
     });
     const block = result.days[0]?.blocks[0];
-    expect(block?.salon).toEqual({ value: "Topacio", status: "AI" });
+    expect(block?.salon).toEqual({ value: "Topacio", status: "RULE" });
     expect(block?.schedule).toEqual({ value: "08:00 a 18:00", status: "AI" });
+    expect(fragments.some((fragment) => /topacio|sal[oó]n/i.test(fragment))).toBe(false);
   });
 
-  it("deja el campo pendiente si el salón no está en el catálogo", async () => {
+  it("usa el lugar tal cual, sin catálogo y sin llamar a la IA por él", async () => {
+    const fragments: { task: string; fragment: string }[] = [];
     const provider: NormalizationProvider = {
-      complete: async () => ({
-        salonCandidates: ["No existe"],
-        scheduleStart: null,
-        scheduleEnd: null,
-        setupType: null,
-        pax: null,
-      }),
+      complete: async (request) => {
+        fragments.push({ task: request.task, fragment: request.fragment });
+        return { target: null, memoTypeKey: null };
+      },
     };
-    const result = await normalizeBudget(budgetWith("Salón raro"), {
+    const sample = budgetWith("Stand Calox");
+    sample.days[0]!.blocks[0]!.schedule = tracked("08:00 a 18:00", "RULE");
+    sample.days[0]!.blocks[0]!.sections[0]!.target = tracked("ALIMENTOS", "RULE");
+    sample.days[0]!.blocks[0]!.sections[0]!.items[0]!.section = tracked("ALIMENTOS", "RULE");
+    sample.benefits = [];
+    const result = await normalizeBudget(sample, {
       catalog,
       provider,
       findLearned: async () => null,
     });
-    expect(result.days[0]?.blocks[0]?.salon.status).toBe("PENDING");
+    expect(result.days[0]?.blocks[0]?.salon).toEqual({ value: "Stand Calox", status: "RULE" });
+    expect(fragments.filter((call) => call.task === "block_fields")).toEqual([]);
+    expect(fragments.some((call) => call.fragment.includes("Stand Calox"))).toBe(false);
   });
 
-  it("deja el campo pendiente si la red falla o no hay clave", async () => {
+  it("conserva el lugar si la red falla o no hay clave", async () => {
     const failing: NormalizationProvider = {
       complete: async () => {
         throw new Error("red");
       },
     };
-    const failed = await normalizeBudget(budgetWith("Salón raro"), {
+    const failed = await normalizeBudget(budgetWith("Stand Calox"), {
       catalog,
       provider: failing,
       findLearned: async () => null,
     });
-    expect(failed.days[0]?.blocks[0]?.salon.status).toBe("PENDING");
+    expect(failed.days[0]?.blocks[0]?.salon).toEqual({ value: "Stand Calox", status: "RULE" });
 
-    const disabled = await normalizeBudget(budgetWith("Salón raro"), {
+    const disabled = await normalizeBudget(budgetWith("Stand Calox"), {
       catalog,
       provider: null,
       findLearned: async () => null,
     });
-    expect(disabled.days[0]?.blocks[0]?.salon.status).toBe("PENDING");
+    expect(disabled.days[0]?.blocks[0]?.salon).toEqual({ value: "Stand Calox", status: "RULE" });
   });
 
   it("no consulta a la IA si el respaldo de CENA CONFERENCIA ya clasifica el alimento", async () => {

@@ -62,9 +62,9 @@ export function labelAmount(value: string): string {
   });
 }
 
-/** Quita la palabra Salón y deja el nombre oficial. */
+/** Quita "Salón" solo cuando abre el nombre. */
 export function displaySalon(name: string): string {
-  return name.replace(/\bsal[oó]n\b/gi, "").replace(/\s+/g, " ").trim();
+  return name.replace(/^sal[oó]n\s*:?\s*/i, "").replace(/\s+/g, " ").trim();
 }
 
 export function personnelLine(qty: number, description: string, unitPriceCents: number | null): string {

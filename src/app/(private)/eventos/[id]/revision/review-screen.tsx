@@ -72,9 +72,14 @@ function shownValue(key: string, value: string | null): string {
 function badge(status: string): string {
   if (status === "AI") return "IA";
   if (status === "PENDING") return "Pendiente";
+  if (status === "ABSENT") return "Sin dato";
   if (status === "REVIEW") return "Revisar";
   if (status === "VALIDATE") return "Validar";
   return "";
+}
+
+function needsAction(status: string): boolean {
+  return status === "PENDING" || status === "AI" || status === "REVIEW";
 }
 
 type GeneratedFile = {
@@ -105,6 +110,7 @@ function driveLabel(status: string | undefined): string {
 
 function tone(status: string): string {
   if (status === "AI") return "field-ai";
+  if (status === "ABSENT") return "field-absent";
   if (status === "PENDING" || status === "REVIEW" || status === "VALIDATE") return "field-pending";
   return "field-rule";
 }
@@ -535,16 +541,16 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
             </p>
           ))}
           {review.ocrFields.map((field) => {
-            const open = field.status !== "RULE";
+            const highlighted = field.status === "VALIDATE";
             return (
               <label
                 key={field.key}
-                className={`review-field ${open ? "field-pending" : "field-rule"}`}
-                data-testid={open ? "campo-abierto" : "campo"}
+                className={`review-field ${highlighted ? "field-pending" : "field-rule"}`}
+                data-testid="campo"
               >
                 <span>
                   {field.label}
-                  {open ? <em className="badge">Validar</em> : null}
+                  {highlighted ? <em className="badge">Validar</em> : null}
                 </span>
                 {field.amountVerified ? <small>Monto verificado</small> : null}
                 {field.cropId ? (
@@ -560,7 +566,7 @@ export function ReviewScreen({ initial }: { initial: EventReview }) {
                   key={`${field.key}-${field.value}-${field.status}`}
                   onBlur={(event) => void saveOcr(field.key, event.target.value)}
                 />
-                {open ? (
+                {highlighted ? (
                   <button
                     type="button"
                     onMouseDown={(event) => event.preventDefault()}
@@ -831,7 +837,7 @@ function MemoView({
         </p>
       ) : null}
       {memo.fields.map((field) => {
-        const open = field.status !== "RULE";
+        const open = needsAction(field.status);
         const mark = badge(field.status);
         const label = FIELD_LABELS[field.key] ?? field.key;
         return (
@@ -1078,7 +1084,7 @@ function FieldBox({
 }) {
   const [remember, setRemember] = useState(false);
   if (!field) return null;
-  const open = field.status !== "RULE";
+  const open = needsAction(field.status);
   const mark = badge(field.status);
   return (
     <label
@@ -1131,7 +1137,7 @@ function LineBox({
   onSave: (line: ReviewLine, qty: number, description: string, unitPrice: string) => void;
   onDelete: (lineId: string) => void;
 }) {
-  const open = line.status !== "RULE";
+  const open = needsAction(line.status);
   const price = line.unitPriceCents === null ? "" : formatAmount(line.unitPriceCents);
   return (
     <div

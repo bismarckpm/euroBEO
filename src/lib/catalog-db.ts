@@ -9,12 +9,14 @@ import {
 } from "../core/config/resolve";
 import { isBeoSection, type BeoSection } from "../core/config/sections";
 import { formatBeoNumber, proposeNextBeoNumber } from "../core/config/sequence";
+import { MEMO_SEQUENCE_KEY, proposeNextMemoNumber } from "../core/memo/number";
 import {
   createAlias,
   createItem,
   createMapping,
   createMemo,
   createSalon,
+  setMemoSequence,
   deleteAlias,
   deleteItem,
   deleteMapping,
@@ -72,6 +74,19 @@ export async function readSequence() {
     year: row.year,
     last: formatBeoNumber(row.lastNumber, row.year),
     next: proposeNextBeoNumber(row.lastNumber, row.year),
+  };
+}
+
+export async function readMemoSequence() {
+  const row = await getPrisma().sequence.upsert({
+    where: { key: MEMO_SEQUENCE_KEY },
+    create: { key: MEMO_SEQUENCE_KEY, lastNumber: 0, year: 0 },
+    update: {},
+  });
+  return {
+    lastNumber: row.lastNumber,
+    last: String(row.lastNumber),
+    next: proposeNextMemoNumber(row.lastNumber),
   };
 }
 
@@ -317,6 +332,26 @@ export async function saveSequence(code: string) {
           where: { key: BEO_SEQUENCE_KEY },
           create: { key: BEO_SEQUENCE_KEY, ...state },
           update: state,
+        });
+      },
+    },
+  );
+}
+
+export async function saveMemoSequence(lastNumber: string) {
+  const prisma = getPrisma();
+  return setMemoSequence(
+    { lastNumber },
+    {
+      read: async () => {
+        const row = await prisma.sequence.findUnique({ where: { key: MEMO_SEQUENCE_KEY } });
+        return row ? row.lastNumber : null;
+      },
+      save: async (value) => {
+        await prisma.sequence.upsert({
+          where: { key: MEMO_SEQUENCE_KEY },
+          create: { key: MEMO_SEQUENCE_KEY, lastNumber: value, year: 0 },
+          update: { lastNumber: value },
         });
       },
     },

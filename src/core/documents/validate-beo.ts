@@ -32,13 +32,6 @@ export function validateBeoLines(label: string, lines: CheckedLine[]): BeoIssue[
         message: `Falta clasificar «${name}» en ${label}.`,
       });
     }
-    if (line.section === "ALIMENTOS" && line.unitPriceCents === null) {
-      issues.push({
-        beo: label,
-        field: name,
-        message: `El alimento «${name}» de ${label} no tiene precio.`,
-      });
-    }
     if (line.section === "PERSONAL" && !line.groupName.trim()) {
       issues.push({
         beo: label,

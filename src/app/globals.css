@@ -367,6 +367,10 @@ td {
   background: #f8e4e2;
 }
 
+.field-absent {
+  background: #f3f1ec;
+}
+
 .ocr-crop {
   display: block;
   max-width: 240px;

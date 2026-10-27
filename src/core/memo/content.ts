@@ -93,7 +93,7 @@ export function planMemoFields(input: {
   const signerName = input.signer.name.trim();
   const signerTitle = input.signer.title.trim();
   return [
-    { key: "numero", value: number, status: number ? "RULE" : "PENDING", source: "memo.number" },
+    { key: "numero", value: number, status: "RULE", source: "memo.number" },
     { key: "fecha", value: formatMemoDate(input.issuedOn), status: "RULE", source: "memo.date" },
     { key: "para", value: input.type.recipient.trim(), status: input.type.recipient.trim() ? "RULE" : "PENDING", source: "memo.config" },
     { key: "empresa", value: input.type.company.trim(), status: input.type.company.trim() ? "RULE" : "PENDING", source: "memo.config" },

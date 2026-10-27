@@ -1,3 +1,4 @@
+import { isEmptyMarker, placeKey } from "../budget/field-status";
 import type { BudgetBlock, BudgetItem, BudgetSection, FieldStatus, ParsedBudget } from "../budget/model";
 import type { FixedTexts } from "../config/fixed-texts";
 import { assignPersonnel, classifyItem, eventColumn } from "./classify";
@@ -35,7 +36,10 @@ function clientField(value: string | null, source: string, origin?: string): Beo
   if (origin === "scan") {
     return field(value, "VALIDATE", source);
   }
-  return field(value, value ? "RULE" : "PENDING", source);
+  if (!value || isEmptyMarker(value)) {
+    return field(null, "ABSENT", source);
+  }
+  return field(value, "RULE", source);
 }
 
 function inherited(status: FieldStatus): BeoFieldStatus {
@@ -50,12 +54,15 @@ function isSharedTeardown(block: BudgetBlock): boolean {
   if (/\b(ambos|todos)\b/i.test(raw)) {
     return true;
   }
-  return block.salon.status === "PENDING" && (raw.includes(" - ") || block.salon.value === null);
+  return block.salon.value === null && (block.salon.status === "ABSENT" || block.salon.status === "PENDING");
 }
 
 function ownSalon(block: BudgetBlock): string {
-  const name = block.salon.value ?? (block.salonRaw ?? "").trim();
-  return displaySalon(name || "Por definir");
+  const name = (block.salon.value ?? block.salonRaw ?? "").trim();
+  if (!name || block.salon.status === "ABSENT") {
+    return "";
+  }
+  return displaySalon(name);
 }
 
 function expand(budget: ParsedBudget): Slice[] {
@@ -126,16 +133,20 @@ function firstText(
   slices: Slice[],
   read: (block: BudgetBlock) => { value: string | null; status: FieldStatus },
 ): BeoField<string | null> {
+  let pending = false;
   for (const slice of slices) {
     const current = read(slice.block);
-    if (current.value) {
+    if (current.value && !isEmptyMarker(current.value)) {
       return field(current.value, inherited(current.status), "budget.block");
     }
+    if (current.status === "PENDING") {
+      pending = true;
+    }
   }
-  return field(null, "PENDING", "budget.block");
+  return field(null, pending ? "PENDING" : "ABSENT", "budget.block");
 }
 
-function guaranteeOf(slices: Slice[], kind: BeoKind): BeoField<number | null> {
+function guaranteeOf(slices: Slice[]): BeoField<number | null> {
   const preferred = slices.filter((slice) => slice.block.kind === "EVENTO");
   const pool = preferred.length > 0 ? preferred : slices;
   for (const slice of pool) {
@@ -143,10 +154,8 @@ function guaranteeOf(slices: Slice[], kind: BeoKind): BeoField<number | null> {
       return field(slice.block.pax.value, inherited(slice.block.pax.status), "budget.pax");
     }
   }
-  if (kind === "MONTAJE") {
-    return field(null, "RULE", "rule:rn-19");
-  }
-  return field(null, "PENDING", "budget.pax");
+  const pending = pool.some((slice) => slice.block.pax.status === "PENDING");
+  return field(null, pending ? "PENDING" : "ABSENT", "budget.pax");
 }
 
 function rentOf(slices: Slice[]): BeoField<number | null> {
@@ -341,7 +350,7 @@ function buildDraft(
 ): BeoDraft {
   const blocks = slices.map((slice) => slice.block);
   const kind = kindOf(blocks);
-  const salon = slices[0]?.salon ?? "Por definir";
+  const salon = slices[0]?.salon ?? "";
   const date = slices[0]?.date ?? "";
   const schedulePool =
     kind === "MONTAJE"
@@ -387,10 +396,18 @@ function buildDraft(
       "RULE",
       "rule:event-type",
     ),
-    salonName: field(salon, slices.some((slice) => slice.needsReview) ? "REVIEW" : inherited(blocks[0]?.salon.status ?? "PENDING"), "budget.salon"),
-    guarantee: guaranteeOf(slices, kind),
+    salonName: field(
+      salon,
+      slices.some((slice) => slice.needsReview) ? "REVIEW" : inherited(blocks[0]?.salon.status ?? "ABSENT"),
+      "budget.salon",
+    ),
+    guarantee: guaranteeOf(slices),
     rentCents: rentOf(slices),
-    billboard: field(budget.eventTitle, "PENDING", "suggestion:event-title"),
+    billboard: field(
+      budget.eventTitle,
+      budget.eventTitle && !isEmptyMarker(budget.eventTitle) ? "RULE" : "ABSENT",
+      "budget.event-title",
+    ),
     setup,
     specialInstructions: field(texts.specialInstructions, "RULE", "config.special-instructions"),
     servicePreparation: field(texts.servicePreparation, "RULE", "config.service-preparation"),
@@ -407,7 +424,7 @@ export function proposeBeos(
 ): BeoDraft[] {
   const groups = new Map<string, Slice[]>();
   for (const slice of expand(budget)) {
-    const key = `${slice.date}\u0000${slice.salon}`;
+    const key = `${slice.date}\u0000${placeKey(slice.salon)}`;
     const group = groups.get(key) ?? [];
     group.push(slice);
     groups.set(key, group);

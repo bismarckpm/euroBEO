@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   missingMarkers,
   beoDownloadName,
+  templateContext,
   toTemplateData,
   type BeoPrintSource,
 } from "./beo-template-data";
@@ -74,6 +75,49 @@ describe("plantilla y nombre de la B.E.O.", () => {
 
   it("rechaza una plantilla a la que le falta un marcador", () => {
     expect(missingMarkers("<w:t>{numero}</w:t>")).toContain("{preparadoEl}");
+  });
+
+  it("omite alimentos cuando el evento solo trae el espacio y personal", () => {
+    const data = toTemplateData(
+      source({
+        lines: [{ section: "PERSONAL", groupName: "Montaje", text: "02 Montaje USD 25,00 c/u" }],
+      }),
+    );
+    const context = templateContext(data);
+    expect(data.foodItems).toEqual([]);
+    expect(context.tieneAlimentos).toBe(false);
+    expect(context.tienePersonal).toBe(true);
+  });
+
+  it("omite personal cuando el evento no lo trae", () => {
+    const data = toTemplateData(source({ lines: [] }));
+    const context = templateContext(data);
+    expect(context.tienePersonal).toBe(false);
+    expect(context.tienePersonalMontaje).toBe(false);
+    expect(context.tienePersonalEvento).toBe(false);
+    expect(context.tienePersonalDesmontaje).toBe(false);
+    expect(data.staff.setup).toEqual([]);
+    expect(data.staff.service).toEqual([]);
+    expect(data.staff.teardown).toEqual([]);
+  });
+
+  it("muestra el alimento sin línea de precio cuando el presupuesto no lo trae", () => {
+    const data = toTemplateData(
+      source({
+        lines: [
+          {
+            section: "ALIMENTOS",
+            groupName: "",
+            text: "Cena de gala",
+            description: "Cena de gala",
+            qty: 10,
+            unitPriceCents: null,
+          },
+        ],
+      }),
+    );
+    expect(data.foodItems[0]?.unitPrice).toBe("");
+    expect(data.foodItems[0]?.title).toContain("Cena");
   });
 
   it("pinta los títulos de sección sin viñeta y mantiene c/u junto al precio", () => {

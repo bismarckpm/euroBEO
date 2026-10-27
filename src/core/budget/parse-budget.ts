@@ -3,7 +3,7 @@ import {
   seedBlockHeaderEntries,
   type BlockHeaderEntry,
 } from "../config/block-headers";
-import { classifyCatalogItem, resolveSalonText, resolveSectionHeader } from "../config/resolve";
+import { classifyCatalogItem, resolveSectionHeader } from "../config/resolve";
 import type { CatalogItemEntry, SalonCatalogEntry, SectionMappingEntry } from "../config/resolve";
 import { normalizeLabel } from "../config/normalize";
 import {
@@ -24,11 +24,20 @@ import {
   type BudgetBlock,
   type BudgetDay,
   type BudgetSection,
-  type FieldStatus,
   type ParsedBudget,
   type ReconciliationLine,
 } from "./model";
 import { verifyArithmetic } from "./arithmetic";
+import {
+  assignPlace,
+  cleanPlace,
+  isEmptyMarker,
+  readBlockPlace,
+  readPax as readPaxStatus,
+  readSchedule,
+  readSetup,
+  statusForText,
+} from "./field-status";
 import { isCourtesyAmount, lastAmount, parseAmount, stripMoney } from "./money";
 import { parsedBudgetSchema } from "./schema";
 
@@ -285,12 +294,7 @@ function classify(
 }
 
 function cleanSalon(text: string): string {
-  return text
-    .replace(/^sal[oó]n\s*:?\s*/i, "")
-    .replace(/\s+room$/i, "")
-    .replace(/\s*-\s*caracas$/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return cleanPlace(text);
 }
 
 function afterColon(text: string): string {
@@ -341,43 +345,22 @@ function integerIn(line: MarkedLine, name: "cantidad" | "noches"): number | null
   return /^\d{1,4}$/.test(text) ? Number(text) : null;
 }
 
-function readPax(lines: string[]): { value: number | null; status: FieldStatus } {
-  if (lines.some((line) => /pax\s*:\s*(?:\.\.\.|…)?\s*$/i.test(line))) {
-    return { value: null, status: "PENDING" };
-  }
-  for (const line of lines) {
-    if (/montaje|setup style/i.test(line)) {
-      continue;
-    }
-    const match =
-      line.match(/(\d+)\s*personas?\b/i) ||
-      line.match(/pax\s*:\s*(\d+)/i) ||
-      line.match(/capacity\s*:\s*(\d+)/i) ||
-      line.match(/n[°ºo]\s*(\d+)/i);
-    if (match) {
-      return { value: Number(match[1]), status: "RULE" };
-    }
-  }
-  return { value: null, status: "PENDING" };
-}
-
 function salonMeta(lines: string[]) {
-  let salonRaw: string | null = null;
-  let schedule: string | null = null;
-  let setupSchedule: string | null = null;
-  let setup: string | null = null;
-
+  const merged: string[] = [];
   for (let index = 0; index < lines.length; index += 1) {
-    let line = lines[index];
+    let line = lines[index] ?? "";
     const next = lines[index + 1];
     if (next && /^:\d{2}/.test(next)) {
       line = `${line} ${next}`.replace(/(\d)\s+:(\d{2})/g, "$1:$2");
       index += 1;
     }
-    if (/sal[oó]n\b|\broom$/i.test(line)) {
-      salonRaw = cleanSalon(line);
-      continue;
-    }
+    merged.push(line);
+  }
+
+  let schedule: string | null = null;
+  let setupSchedule: string | null = null;
+  let setup: string | null = null;
+  for (const line of merged) {
     if (/horario de montaje|setup schedule/i.test(line)) {
       setupSchedule = afterColon(line);
       continue;
@@ -390,19 +373,21 @@ function salonMeta(lines: string[]) {
       setup = afterColon(line);
     }
   }
-
   if (!schedule && setupSchedule) {
     schedule = setupSchedule;
   } else if (schedule && setupSchedule) {
     schedule = `${schedule} / montaje ${setupSchedule}`;
   }
 
-  const pax = readPax(lines);
-  const setupPending = !setup || /por definir|^\.\.\.$/i.test(setup);
+  const place = readBlockPlace(merged);
+  const pax = readPaxStatus(merged);
+  const scheduleField = readSchedule(schedule);
+  const setupField = readSetup(setup);
   return {
-    salonRaw,
-    schedule: tracked(schedule, schedule ? "RULE" : "PENDING"),
-    setup: tracked(setup, setupPending ? "PENDING" : "RULE"),
+    salonRaw: place,
+    salon: assignPlace(place, []),
+    schedule: tracked(scheduleField.value, scheduleField.status),
+    setup: tracked(setupField.value, setupField.status),
     pax: tracked(pax.value, pax.status),
   };
 }
@@ -447,14 +432,15 @@ function flagsFor(rate: string, total: string): string[] {
 
 function emptyBlock(kind: BlockKind, rawTitle: string, page: number): BudgetBlock {
   const salonInTitle = rawTitle.match(/sal[oó]n\s+(.+)$/i);
+  const place = salonInTitle?.[1] ? cleanSalon(salonInTitle[1]) : null;
   return {
     kind,
     rawTitle,
-    salonRaw: salonInTitle ? cleanSalon(salonInTitle[1]) : null,
-    salon: tracked(null, "PENDING"),
-    schedule: tracked(null, "PENDING"),
-    setup: tracked(null, "PENDING"),
-    pax: tracked(null, "PENDING"),
+    salonRaw: place,
+    salon: assignPlace(place, []),
+    schedule: tracked(null, "ABSENT"),
+    setup: tracked(null, "ABSENT"),
+    pax: tracked(null, "ABSENT"),
     nights: null,
     rent: { regular: null, net: null, discountLabel: null, courtesy: false },
     sections: [],
@@ -623,19 +609,15 @@ function applyRules(budget: ParsedBudget, catalog: BudgetCatalog | undefined): v
   }
   for (const day of budget.days) {
     for (const block of day.blocks) {
-      if (block.salonRaw) {
-        const resolved = resolveSalonText(block.salonRaw, catalog.salons);
-        block.salon =
-          resolved.status === "resolved"
-            ? tracked(resolved.name, "RULE")
-            : tracked(null, "PENDING");
-      }
+      block.salon = assignPlace(block.salonRaw, catalog.salons);
       for (const section of block.sections) {
         const header = section.headerRaw
           ? resolveSectionHeader(section.headerRaw, catalog.mappings)
           : { status: "unresolved" as const };
         if (header.status === "resolved") {
           section.target = tracked(header.section, "RULE");
+        } else {
+          section.target = tracked(null, statusForText(section.headerRaw, false));
         }
         for (const item of section.items) {
           const firstLine = item.description.split("\n")[0] ?? item.description;
@@ -649,7 +631,9 @@ function applyRules(budget: ParsedBudget, catalog: BudgetCatalog | undefined): v
           const match = catalog.items.find(
             (entry) => entry.normalized === normalizeLabel(firstLine),
           );
-          item.section = match ? tracked(match.section, "RULE") : tracked(null, "PENDING");
+          item.section = match
+            ? tracked(match.section, "RULE")
+            : tracked(null, statusForText(firstLine, false));
         }
       }
     }
@@ -701,7 +685,7 @@ function reconcile(budget: ParsedBudget): void {
     actual,
     difference: expected === null ? null : actual - expected,
     lines,
-    ok: expected !== null && actual === expected,
+    ok: expected === null || actual === expected,
   };
 }
 
@@ -785,14 +769,6 @@ export function parseBudget(
       "No apareció el encabezado de tabla; se usaron las columnas habituales de la plantilla.",
     );
   }
-  if (!budget.header.locator && !budget.client.company) {
-    budget.structureErrors.push({
-      page: 1,
-      section: "cabecera",
-      message: "No se encontró la cabecera del presupuesto.",
-    });
-  }
-
   const attached = assignText(marked);
   const cursor: {
     day: BudgetDay | null;
@@ -801,7 +777,6 @@ export function parseBudget(
   } = { day: null, block: null, section: null };
   let mode: "body" | "totals" | "benefits" | "clauses" = "body";
   const clauses: string[] = [];
-  let lastPage = 1;
 
   const finishBlock = () => {
     const block = cursor.block;
@@ -861,12 +836,15 @@ export function parseBudget(
     if (cursor.section?.headerRaw === headerRaw) {
       return;
     }
-    cursor.section = { headerRaw, target: tracked(null, "PENDING"), items: [] };
+    cursor.section = {
+      headerRaw,
+      target: tracked(null, statusForText(headerRaw, false)),
+      items: [],
+    };
     cursor.block.sections.push(cursor.section);
   };
 
   for (const line of marked) {
-    lastPage = line.page;
     if (line.kind === "clauses" || mode === "clauses") {
       mode = "clauses";
       clauses.push(lineText(line));
@@ -905,7 +883,8 @@ export function parseBudget(
       const block = cursor.block;
       let applied = false;
       if (block && /^hora\s*:/i.test(area) && !block.schedule.value) {
-        block.schedule = tracked(afterColon(area), "RULE");
+        const schedule = readSchedule(afterColon(area));
+        block.schedule = tracked(schedule.value, schedule.status);
         applied = true;
       } else if (
         block &&
@@ -913,11 +892,12 @@ export function parseBudget(
         !/^tipo de montaje\b/i.test(area) &&
         !block.setup.value
       ) {
-        const setup = afterColon(area);
-        block.setup = tracked(setup, /por definir|^\.\.\.$/i.test(setup) ? "PENDING" : "RULE");
+        const setup = readSetup(afterColon(area));
+        block.setup = tracked(setup.value, setup.status);
         applied = true;
-      } else if (block && /\bstand\b/i.test(area) && !block.salonRaw) {
+      } else if (block && !block.salonRaw && !isEmptyMarker(area) && readBlockPlace([area])) {
         block.salonRaw = cleanSalon(area);
+        block.salon = assignPlace(block.salonRaw, []);
         applied = true;
       }
       if (applied) {
@@ -985,6 +965,7 @@ export function parseBudget(
       }
       const meta = salonMeta(linesOfItem);
       cursor.block.salonRaw = meta.salonRaw ?? cursor.block.salonRaw;
+      cursor.block.salon = meta.salonRaw ? meta.salon : cursor.block.salon;
       cursor.block.schedule = meta.schedule;
       cursor.block.setup = meta.setup;
       cursor.block.pax = meta.pax;
@@ -1004,26 +985,12 @@ export function parseBudget(
       unitPrice: parseAmount(rate),
       total: parseAmount(totalText),
       flags: flagsFor(rate, totalText),
-      section: tracked(null, "PENDING"),
+      section: tracked(null, statusForText(description, false)),
     });
   }
 
   finishBlock();
   budget.days = budget.days.filter((entry) => entry.blocks.length > 0);
-  if (budget.days.length === 0) {
-    budget.structureErrors.push({
-      page: 1,
-      section: "bloques",
-      message: "No se encontró ningún bloque de evento.",
-    });
-  }
-  if (budget.totals.subtotal === null) {
-    budget.structureErrors.push({
-      page: lastPage,
-      section: "totales",
-      message: "No se encontró la sección de totales.",
-    });
-  }
 
   applyRules(budget, options.catalog);
   rememberClauses(budget, clauses, options.catalog?.keywords ?? options.keywords ?? []);

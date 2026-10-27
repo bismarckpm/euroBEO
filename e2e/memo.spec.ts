@@ -86,10 +86,13 @@ test("genera el memo de Nena con los salones de sus B.E.O.", async ({ page }) =>
 
     await page.getByTestId("memo-nav").click();
     const number = page.getByLabel("Número del memorándum");
-    if ((await number.inputValue()).trim() === "") {
-      await number.fill("89");
-      await number.press("Tab");
-    }
+    await expect(number).not.toHaveValue("");
+    const savedNumber = page.waitForResponse(
+      (response) => response.url().includes("/review") && response.request().method() === "POST",
+    );
+    await number.fill("89");
+    await number.press("Tab");
+    await savedNumber;
     await clearSelected(page);
     await expect(page.getByTestId("pendientes-evento")).toHaveText("Sin pendientes", { timeout: 20_000 });
     await page.getByTestId("confirmar-generar").click();

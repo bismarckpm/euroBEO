@@ -152,10 +152,10 @@ describe.skipIf(!available)("presupuestos de ejemplo", () => {
     expect(event?.block.rent.net).toBe(585000);
     expect(event?.block.rent.discountLabel).toMatch(/35%/);
     expect(event?.block.salon.status).toBe("RULE");
-    const pendingPax = blocks.find(
-      (entry) => entry.block.salon.value === "Topacio" && entry.block.pax.status === "PENDING",
+    const missingPax = blocks.find(
+      (entry) => entry.block.salon.value === "Topacio" && entry.block.pax.status === "ABSENT",
     );
-    expect(pendingPax?.block.pax.value).toBeNull();
+    expect(missingPax?.block.pax.value).toBeNull();
     const courtesy = blocks.find((entry) => entry.block.rent.courtesy);
     expect(courtesy?.block.rent.net).toBeNull();
   });
@@ -200,5 +200,53 @@ describe("estructura", () => {
     expect(
       budget.structureErrors.some((error) => error.page === 1 && /tabla/i.test(error.message)),
     ).toBe(true);
+    expect(budget.structureErrors.some((error) => error.section === "cabecera")).toBe(false);
+    expect(budget.structureErrors.some((error) => error.section === "totales")).toBe(false);
+  });
+
+  it("procesa un presupuesto con tabla y sin sección de totales", () => {
+    const row = (text: string, x: number, y: number, width = 70) => ({ text, x, y, width, page: 1 });
+    const budget = parseBudget([
+      row("Cantidad", 40, 720, 50),
+      row("Descripción", 160, 720, 80),
+      row("Día", 330, 720, 30),
+      row("Moneda", 390, 720, 40),
+      row("Tarifa", 450, 720, 40),
+      row("Total", 540, 720, 40),
+      row("07 de octubre de 2026", 40, 680, 160),
+      row("1", 48, 640, 12),
+      row("Stand Calox", 160, 640, 80),
+      row("Renta", 456, 640, 40),
+      row("100,00", 546, 640, 36),
+    ]);
+    expect(budget.structureErrors).toEqual([]);
+    expect(budget.totals.subtotal).toBeNull();
+    expect(budget.days[0]?.blocks[0]?.salon).toEqual({ value: "Stand Calox", status: "RULE" });
+    expect(budget.days[0]?.blocks[0]?.pax).toEqual({ value: null, status: "ABSENT" });
+    expect(budget.warnings.some((warning) => /totales/i.test(warning))).toBe(false);
+  });
+
+  it("avisa un ítem sin total y noches distintas sin bloquear", () => {
+    const row = (text: string, x: number, y: number, width = 70) => ({ text, x, y, width, page: 1 });
+    const budget = parseBudget([
+      row("Cantidad", 40, 720, 50),
+      row("Descripción", 160, 720, 80),
+      row("Día", 330, 720, 30),
+      row("Moneda", 390, 720, 40),
+      row("Tarifa", 450, 720, 40),
+      row("Total", 540, 720, 40),
+      row("07 de octubre de 2026", 40, 680, 160),
+      row("1", 48, 640, 12),
+      row("2", 330, 640, 12),
+      row("Stand Calox", 160, 640, 80),
+      row("Renta", 456, 640, 40),
+      row("100,00", 546, 640, 36),
+      row("1", 48, 600, 12),
+      row("Agua", 160, 600, 40),
+    ]);
+    expect(budget.structureErrors).toEqual([]);
+    expect(budget.warnings.some((warning) => warning.startsWith("Ítem sin total: Agua"))).toBe(true);
+    expect(budget.warnings.some((warning) => /2 noches/.test(warning))).toBe(true);
+    expect(budget.reconciliation.ok).toBe(true);
   });
 });

@@ -28,6 +28,7 @@ const STATUS_LABELS: Record<string, string> = {
   RULE: "Regla",
   AI: "IA",
   PENDING: "Pendiente",
+  ABSENT: "Sin dato",
 };
 
 function formatStamp(date: Date): string {

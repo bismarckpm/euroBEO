@@ -7,15 +7,15 @@ Catálogos y textos configurables (salones, secciones, ítems, textos fijos, mem
 ## Requirements
 
 ### Requirement: Catálogo de salones con alias
-El sistema MUST mantener un catálogo de salones con nombre oficial y alias, y MUST resolver cualquier texto de salón del presupuesto a su nombre oficial ignorando mayúsculas, acentos y la palabra "salón".
+El sistema MUST mantener un catálogo opcional de nombres oficiales y alias de espacios, usado solo para unificar distintas escrituras del mismo lugar ignorando mayúsculas, acentos y la palabra "salón". Un lugar que no coincide con el catálogo MUST usarse tal como viene en el presupuesto.
 
 #### Scenario: Resolver alias
 - **WHEN** el presupuesto dice "Salon Plaza Real A y B" y existe el alias "Plaza Real A y B"
-- **THEN** el sistema resuelve el salón al nombre oficial configurado
+- **THEN** el lugar se unifica al nombre oficial configurado
 
 #### Scenario: Salón desconocido
-- **WHEN** un texto de salón no coincide con ningún nombre ni alias
-- **THEN** el sistema lo marca como no resuelto para que lo atienda la normalización o la asistente
+- **WHEN** un texto de lugar no coincide con ningún nombre ni alias, como "Cancha de pádel"
+- **THEN** el sistema usa "Cancha de pádel" como lugar con estado "Regla"
 
 ### Requirement: Mapeo de secciones del presupuesto
 El sistema MUST mantener un mapeo de encabezados de sección del presupuesto (con variantes) a una sección destino de la B.E.O. o a "excluir".
@@ -69,3 +69,10 @@ El sistema MUST mantener un catálogo de tipos de evento con palabras clave (por
 #### Scenario: Nuevo tipo
 - **WHEN** la asistente agrega el tipo "LANZAMIENTO" con la palabra clave "lanzamiento"
 - **THEN** un evento titulado "Lanzamiento de producto" obtiene EVENTO = "LANZAMIENTO"
+
+### Requirement: Último número de memorándum
+El sistema MUST guardar el último número de memorándum emitido y MUST permitir que la asistente lo ajuste. El próximo número propuesto MUST ser el entero siguiente.
+
+#### Scenario: Ajuste del último memo
+- **WHEN** la asistente indica que el último memorándum emitido es 89
+- **THEN** el próximo número propuesto es 90

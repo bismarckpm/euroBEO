@@ -1,4 +1,4 @@
-import type { ParsedBudget } from "./model";
+import type { BudgetTotals, ParsedBudget } from "./model";
 
 export type BudgetDifference = {
   field: string;
@@ -71,6 +71,24 @@ export function compareBudgets(previous: ParsedBudget, next: ParsedBudget): Budg
         field: label,
         before: `${left.qty} × ${money(left.price)} = ${money(left.total)}`,
         after: `${right.qty} × ${money(right.price)} = ${money(right.total)}`,
+      });
+    }
+  }
+  const totals: [keyof BudgetTotals, string][] = [
+    ["subtotal", "Subtotal"],
+    ["iva", "IVA"],
+    ["logistics", "Logística"],
+    ["general", "Total"],
+  ];
+  const previousTotals = previous.totals;
+  const nextTotals = next.totals;
+  if (previousTotals && nextTotals) {
+    for (const [key, label] of totals) {
+      if (previousTotals[key] === nextTotals[key]) continue;
+      differences.push({
+        field: label,
+        before: money(previousTotals[key]),
+        after: money(nextTotals[key]),
       });
     }
   }

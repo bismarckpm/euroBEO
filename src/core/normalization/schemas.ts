@@ -50,10 +50,9 @@ export function promptFor(task: NormalizationTask, catalog: ClosedCatalog): stri
   const shared = "Responde solo un objeto JSON. No inventes datos que no estén en el fragmento.";
   if (task === "block_fields") {
     return [
-      "Interpretas el texto libre de un bloque de evento.",
+      "Interpretas el horario, el montaje y el pax de un bloque de evento. No interpretes el lugar.",
       shared,
-      "Claves: salonCandidates (array de nombres copiados de la lista, o vacío), scheduleStart, scheduleEnd (HH:MM de 24 horas o null), setupType (string o null), pax (entero o null).",
-      `Salones permitidos: ${catalog.salons.join(", ") || "ninguno"}.`,
+      "Claves: scheduleStart, scheduleEnd (HH:MM de 24 horas o null), setupType (string o null), pax (entero o null).",
     ].join("\n");
   }
   if (task === "item_section") {
